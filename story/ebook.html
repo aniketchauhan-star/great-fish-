@@ -21,12 +21,15 @@
     </style>
     <style>
       /* ── Responsive scaling ──
-         Scale lives on inner viewport so turn.js drag math stays correct.
-         Outer .book-scene only does translation. */
+         Scale the WHOLE book (outer frame + page together) so the outside frame,
+         spine, shells and page edges always wrap the page at any zoom. turn.js
+         runs on #flipbook (a descendant of the viewport, itself a descendant of
+         .book-cover-wrap), so it ends up with the SAME net scale as before and
+         its drag math is unchanged. Outer .book-scene only translates. */
       .book-scene{
         transform: translate(-50%, -54%);
       }
-      .book-scene .flipbook-viewport{
+      .book-scene .book-cover-wrap{
         transform: scale(var(--book-scale, 1));
         transform-origin: center center;
       }
@@ -53,17 +56,17 @@
       }
       .loader-cover-wrap{
         position:relative;
-        background:var(--theme-cover);
-        padding:14px;
-        border-radius:18px;
+        background:linear-gradient(135deg,#ffe7a6 0%,#e6ae4f 45%,#fff1c8 100%);
+        padding:26px 26px 30px 46px;   /* match the live book frame */
+        border-radius:22px;
+        transform: scale(var(--book-scale, 1));   /* scale the whole frame, like the book */
+        transform-origin:center center;
         filter:
-          drop-shadow(0 20px 40px rgba(0,0,0,.38))
-          drop-shadow(0 6px 14px rgba(0,0,0,.22));
+          drop-shadow(0 20px 40px rgba(105,65,20,0.26))
+          drop-shadow(0 6px 14px rgba(120,75,25,0.16));
       }
       .loader-viewport{
         width:820px; height:472px; overflow:hidden;
-        transform: scale(var(--book-scale, 1));
-        transform-origin:center center;
       }
       .loader-thumb{
         width:100%; height:100%;
@@ -112,18 +115,25 @@
       /* ── Hardcover wrap ──
          Now closed on all four sides since the page-stack base was removed.
          The cover provides the full border around the flipbook viewport. */
+      /* Sandy-golden beach storybook frame around (and OUTSIDE) the page. Extra
+         padding on the left (spine) and bottom (foot binding) makes room for the
+         ornaments, which live in this padding — never on the page. Raised off the
+         background with a soft warm-brown shadow + a gentle top highlight. */
       .book-cover-wrap{
         position:relative;
-        background:var(--theme-cover);
-        padding:14px;
-        border-radius:18px;
+        background:linear-gradient(135deg,#ffe7a6 0%,#e6ae4f 45%,#fff1c8 100%);
+        padding:26px 26px 30px 46px;   /* top right bottom left — room for ornaments */
+        border-radius:22px;
         filter:
-          drop-shadow(0 20px 40px rgba(0,0,0,.38))
-          drop-shadow(0 6px 14px rgba(0,0,0,.22));
+          drop-shadow(0 20px 40px rgba(105,65,20,0.26))
+          drop-shadow(0 6px 14px rgba(120,75,25,0.16));
+        box-shadow:
+          inset 0 2px 0 rgba(255,255,255,0.50),
+          inset 0 -7px 14px rgba(120,70,20,0.12);
       }
       .book-cover-wrap::before{
         content:'';position:absolute;inset:0;pointer-events:none;
-        background:linear-gradient(to bottom,rgba(255,255,255,.07) 0%,transparent 35%,rgba(0,0,0,.06) 100%);
+        background:linear-gradient(to bottom,rgba(255,255,255,.30) 0%,transparent 32%,rgba(120,70,20,.08) 100%);
         border-radius:inherit;
       }
 
@@ -215,29 +225,73 @@
       .flipbook .page{box-shadow:0 2px 6px rgba(0,0,0,.12),0 0 22px rgba(0,0,0,.18)}
       .flipbook-viewport .shadow{transition:box-shadow .5s;box-shadow:0 0 20px #bbb}
 
-      /* ── Binding overlay — sits on the LEFT edge of the book ── */
+      /* ── "Beach-Themed Storybook Edge" — ALL ornaments live OUTSIDE the page ──
+         They are children of .book-cover-wrap (siblings of the viewport), sitting
+         in the frame padding only. Nothing overlaps the story artwork. Because
+         the whole book scales together, they always stay aligned to the page.
+         pointer-events:none so they never affect the flip or clicks. */
+
+      /* Warm cream / sandy book spine in the LEFT frame padding. */
       .book-spine{
-        position:absolute;
-        top:0;
-        left:0;
-        width:18px;
-        height:100%;
-        z-index:9999;
-        pointer-events:none;       /* don't intercept turn.js drag */
-        cursor:pointer;            /* clickable to go back */
-        background: linear-gradient(to right,
-          rgba(0,0,0,0.35) 0%,
-          rgba(0,0,0,0.22) 40%,
-          rgba(0,0,0,0.10) 75%,
-          rgba(0,0,0,0)    100%
-        );
-        box-shadow: 2px 0 6px -1px rgba(0,0,0,0.18) inset;
+        position:absolute; left:5px; top:26px; bottom:30px;
+        width:34px;
+        z-index:6;
+        pointer-events:none;
+        border-radius:14px 6px 6px 14px;
+        background:linear-gradient(to right,
+          #d99235 0%, #f3c46f 40%, #ffe5aa 75%, #f5bd5d 100%);
+        box-shadow:
+          inset -6px 0 12px rgba(90,50,15,0.20),
+          inset  4px 0 10px rgba(255,245,200,0.50),
+          2px 0 10px rgba(90,50,15,0.16);
       }
-      .book-spine::after{
-        content:'';position:absolute;top:0;bottom:0;left:0;width:3px;
-        background:linear-gradient(to bottom,var(--theme-cover-dark),var(--theme-cover),var(--theme-cover-dark));
-        border-radius:0 2px 2px 0;
+
+      /* Thin sea-blue highlight hugging the page from OUTSIDE (in the frame gap,
+         never on the page). Drawn as an outline so it adds no layout / no cover. */
+      .flipbook-viewport{
+        outline:3px solid rgba(80,190,205,0.45);
+        outline-offset:0;
       }
+
+      /* Cream layered page edges — right thickness + bottom foot binding, both in
+         the frame padding (outside the page). */
+      .outside-right-page-edge{
+        position:absolute; right:6px; top:30px; bottom:34px; width:12px;
+        z-index:5; pointer-events:none;
+        border-radius:0 10px 10px 0;
+        background:repeating-linear-gradient(to right,
+          rgba(255,244,210,0.95) 0 2px,
+          rgba(210,160,90,0.24) 2px 3px,
+          rgba(255,236,190,0.78) 3px 5px);
+      }
+      .outside-bottom-page-edge{
+        position:absolute; left:50px; right:30px; bottom:6px; height:13px;
+        z-index:5; pointer-events:none;
+        border-radius:0 0 10px 10px;
+        background:repeating-linear-gradient(to bottom,
+          rgba(255,244,210,0.95) 0 2px,
+          rgba(205,155,75,0.26) 2px 3px,
+          rgba(255,236,190,0.78) 3px 5px);
+      }
+
+      /* Cute little shell accents tucked in the 4 outer FRAME corners. Small
+         enough (22px) to sit fully within the padding — never on the page. */
+      .outside-shell{
+        position:absolute; width:22px; height:22px;
+        pointer-events:none; z-index:9; opacity:0.95;
+        background:
+          radial-gradient(circle at 50% 85%, #f7d6b0 0 18%, transparent 20%),
+          repeating-conic-gradient(from 200deg, #fff3d6 0deg 12deg, #e8b98c 13deg 18deg);
+        border-radius:50% 50% 8px 8px;
+        box-shadow:
+          inset 0 2px 3px rgba(255,255,255,0.55),
+          0 3px 7px rgba(105,65,20,0.18);
+      }
+      .shell-top-left{     top:3px; left:6px;     transform:rotate(-35deg); }
+      .shell-top-right{    top:3px; right:3px;    transform:rotate(35deg); }
+      .shell-bottom-left{  bottom:5px; left:6px;  transform:rotate(-140deg); }
+      .shell-bottom-right{ bottom:5px; right:3px; transform:rotate(140deg); }
+
 
       /* ── Page-navigation arrows (middle of the left / right page edges) ──
          Live INSIDE .flipbook-viewport so they scale with the book (--book-scale
@@ -1135,14 +1189,20 @@
 
     <div class="book-scene">
       <div class="book-cover-wrap">
+        <!-- Beach-themed ornaments — OUTSIDE the page, in the frame padding only -->
+        <div class="book-spine" aria-hidden="true"></div>
+        <div class="outside-right-page-edge" aria-hidden="true"></div>
+        <div class="outside-bottom-page-edge" aria-hidden="true"></div>
+        <div class="outside-shell shell-top-left" aria-hidden="true"></div>
+        <div class="outside-shell shell-top-right" aria-hidden="true"></div>
+        <div class="outside-shell shell-bottom-left" aria-hidden="true"></div>
+        <div class="outside-shell shell-bottom-right" aria-hidden="true"></div>
         <div class="flipbook-viewport" style="position:relative">
           <div class="container">
             <div id="flipbook" dir="ltr"><!-- pages injected by JS --></div>
           </div>
           <!-- Overlay: text & bubbles sit above ALL turn.js pages, no clipping -->
           <div id="storyOverlay"></div>
-          <!-- Book spine gutter — on top of everything -->
-          <div class="book-spine"></div>
           <!-- Page-navigation arrows — middle of the left / right page edges.
                Revealed (.nav-visible) by markFlipReady() once the page's video
                has ended. The <button> is the placement wrapper (edge + vertical
@@ -4809,8 +4869,8 @@
          Book intrinsic size ≈ 848 wide × ~520 tall (cover + page-stack).
          Scale up on big screens, down on small ones, with sensible padding. */
       function updateBookScale(){
-        var BOOK_W = 870;   /* a bit beyond 848 to include shadows */
-        var BOOK_H = 510;   /* cover-wrap height (472 page + 14×2 padding + a touch for shadows) */
+        var BOOK_W = 912;   /* 820 page + frame padding (46+26) + shadow room */
+        var BOOK_H = 548;   /* 472 page + frame padding (26+30) + shadow room */
         /* Tighter padding so the book fills more of the viewport on every
            device. On a phone in portrait we still need a few pixels of
            breathing room for the page-counter under the book. */
