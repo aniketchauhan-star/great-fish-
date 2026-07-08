@@ -77,7 +77,13 @@
          Initial values MUST match THEMES[ACTIVE_THEME] (pawYellow) so there
          is no first-paint flash before applyTheme() runs. */
       :root{
-        --theme-bg: #FFD93D;
+        /* Desert theme — warm golden gradient with a soft sunlight glow.
+           This is the outer background BEHIND the flipbook only. Adjust the
+           colours here (and keep pawYellow.bg in THEMES identical to avoid a
+           first-paint flash). */
+        --theme-bg:
+          radial-gradient(circle at 25% 20%, rgba(255,249,214,0.90) 0%, rgba(255,244,190,0.25) 30%, rgba(255,244,190,0) 55%),
+          linear-gradient(180deg, #FFE38A 0%, #FBC64F 45%, #EFA53A 100%);
         --theme-cover: #7B2630;
         --theme-cover-dark: #5C1B23;
         --theme-cover-light: #9C3641;
@@ -229,8 +235,7 @@
          hold a constant ~100px on screen regardless of the book scale. */
       .nav-btn{
         position:absolute;
-        top:50%;
-        transform:translateY(-50%);
+        bottom:0;                 /* tucked into the bottom corner, touching the edge */
         width:calc(100px / var(--book-scale, 1));
         height:calc(100px / var(--book-scale, 1));
         padding:0;
@@ -255,8 +260,17 @@
         pointer-events:none;      /* clicks land on the button, not the image */
         -webkit-user-drag:none;user-select:none;
       }
-      .nav-back{ left:calc(14px / var(--book-scale, 1)); }
-      .nav-next{ right:calc(14px / var(--book-scale, 1)); }
+      .nav-back{ left:0; transform-origin:bottom left; }   /* extreme bottom-left corner */
+      .nav-next{ right:0; transform-origin:bottom right; }  /* extreme bottom-right corner */
+
+      /* NEXT button — bigger, and sized to the trimmed triangle's own aspect
+         ratio (PNG cropped to its opaque bounds) so the visible blue triangle
+         touches the bottom and right page edges with no gap. */
+      .nav-next{
+        width:calc(150px / var(--book-scale, 1));
+        height:auto;
+      }
+      .nav-next img{ height:auto; }
 
       /* Visible + clickable state */
       .nav-btn.nav-visible{
@@ -264,14 +278,14 @@
         visibility:visible;
         pointer-events:auto;      /* only the buttons capture clicks */
       }
-      .nav-btn.nav-visible:hover{  transform:translateY(-50%) scale(1.07); }
-      .nav-btn.nav-visible:active{ transform:translateY(-50%) scale(.95); }
+      .nav-btn.nav-visible:hover{  transform:scale(1.07); }
+      .nav-btn.nav-visible:active{ transform:scale(.95); }
 
       /* Soft pulse + glow attract animation (added 3s after page is ready) */
       @keyframes navPulse{
-        0%,100%{ transform:translateY(-50%) scale(1);
+        0%,100%{ transform:scale(1);
                  filter:drop-shadow(0 0 2px rgba(255,255,255,.35)); }
-        50%    { transform:translateY(-50%) scale(1.09);
+        50%    { transform:scale(1.09);
                  filter:drop-shadow(0 0 12px rgba(255,232,140,.95)); }
       }
       .nav-btn.nav-visible.nav-attract{ animation:navPulse 1.6s ease-in-out infinite; }
@@ -283,8 +297,10 @@
           width:calc(70px / var(--book-scale, 1));
           height:calc(70px / var(--book-scale, 1));
         }
-        .nav-back{ left:calc(8px / var(--book-scale, 1)); }
-        .nav-next{ right:calc(8px / var(--book-scale, 1)); }
+        /* stay tucked into the corners on small screens too */
+        .nav-back{ left:0; }
+        /* NEXT stays bigger and keeps the triangle's aspect ratio */
+        .nav-next{ right:0; width:calc(110px / var(--book-scale, 1)); height:auto; }
       }
 
       /* ── Start button (cover/thumbnail page only) ──
@@ -377,18 +393,20 @@
         box-shadow: -4px -4px 12px rgba(0,0,0,0.22);
       }
       .page-turn-hint.active {
-        animation: cornerTease 2.8s ease-in-out forwards;
+        animation: cornerLift 2.4s ease-in-out forwards;
       }
-      @keyframes cornerTease {
-        0%   { transform: scale(0);    opacity: 0; }
-        18%  { transform: scale(1);    opacity: 1; }   /* fully peeled */
-        40%  { transform: scale(0.28); opacity: 0.8; } /* settles back */
-        62%  { transform: scale(0.85); opacity: 1; }   /* lifts again */
-        82%  { transform: scale(0.22); opacity: 0.65; }/* settles */
-        100% { transform: scale(0);    opacity: 0; }   /* flat */
+      /* The hand reaches the corner (~15%), grips and lifts it up to reveal
+         the page can flip (~55%), then gently settles it back down (~75%).
+         A wordless, child-simple "grab the corner and lift" gesture. */
+      @keyframes cornerLift {
+        0%   { transform: scale(0);    opacity: 0;   }
+        15%  { transform: scale(0.14); opacity: 0.7; } /* corner just caught */
+        55%  { transform: scale(0.92); opacity: 1;   } /* lifted to show flip */
+        75%  { transform: scale(0.14); opacity: 0.6; } /* settling back down */
+        100% { transform: scale(0);    opacity: 0;   } /* rest before repeat */
       }
 
-      /* ── Swipe-hand demo overlay (shown once on first visit) ── */
+      /* ── Hand nudge that grabs & lifts the page corner ── */
       .swipe-hand-demo {
         position: absolute;
         bottom: 28px;
@@ -401,49 +419,18 @@
         filter: drop-shadow(0 4px 10px rgba(0,0,0,.45));
       }
       .swipe-hand-demo.run {
-        animation: swipeHandArc 1.6s cubic-bezier(.4,0,.2,1) forwards;
+        animation: handGrabLift 2.4s ease-in-out forwards;
       }
-      @keyframes swipeHandArc {
-        0%   { opacity:0;   transform: translate(0px, 0px)   scale(.85); }
-        12%  { opacity:1;   transform: translate(0px, 0px)   scale(1);   }
-        75%  { opacity:1;   transform: translate(-130px, -18px) scale(1); }
-        100% { opacity:0;   transform: translate(-155px, -22px) scale(.9); }
-      }
-
-      /* Label bubble that appears above the corner on first visit */
-      .swipe-hint-label {
-        position: absolute;
-        bottom: 78px;
-        right: 14px;
-        z-index: 10000;
-        pointer-events: none;
-        background: rgba(0,0,0,.68);
-        color: #fff;
-        font-family: 'Fredoka One','Nunito',sans-serif;
-        font-size: 13px;
-        letter-spacing: .3px;
-        padding: 5px 10px 5px 9px;
-        border-radius: 20px;
-        white-space: nowrap;
-        opacity: 0;
-        transform: translateY(6px);
-        transition: opacity .35s ease, transform .35s ease;
-      }
-      .swipe-hint-label::after {
-        content: '';
-        position: absolute;
-        bottom: -6px;
-        right: 18px;
-        width: 0; height: 0;
-        border-left: 6px solid transparent;
-        border-right: 6px solid transparent;
-        border-top: 7px solid rgba(0,0,0,.68);
-      }
-      .swipe-hint-label.show { opacity: 1; transform: translateY(0); }
-      .page-turn-hint,
-      .swipe-hand-demo,
-      .swipe-hint-label{
-        display:none !important;
+      /* Moves toward the bottom-right corner to grip it, lifts up-and-inward
+         (dragging the peel with it), then lowers and releases. Positive x/y
+         move toward the corner because the hand is bottom/right anchored. */
+      @keyframes handGrabLift {
+        0%   { opacity: 0;   transform: translate(2px, 2px)    scale(.9); }
+        15%  { opacity: 1;   transform: translate(8px, 8px)    scale(1);  } /* reach & grip corner */
+        30%  { opacity: 1;   transform: translate(8px, 8px)    scale(1);  }
+        55%  { opacity: 1;   transform: translate(-14px, -16px) scale(1);  } /* lift corner up */
+        75%  { opacity: 0.5; transform: translate(-4px, -4px)  scale(.97);} /* lower & release */
+        100% { opacity: 0;   transform: translate(2px, 2px)    scale(.9); }
       }
 
       /* ── Pond reveal interaction (state-based) ──
@@ -1160,7 +1147,7 @@
       <div class="loader-scene">
         <div class="loader-cover-wrap">
           <div class="loader-viewport">
-            <img class="loader-thumb" src="../the%20great%20fish%20rescue/Thumbnail.png" alt="The Great Fish Rescue">
+            <img class="loader-thumb" src="../assets/pages/thumbnail.png" alt="The Great Fish Rescue">
           </div>
         </div>
       </div>
@@ -1189,17 +1176,11 @@
           <div id="storyOverlay"></div>
           <!-- Book spine gutter — on top of everything -->
           <div class="book-spine"></div>
-          <!-- Custom navigation buttons — overlay the book, flip only via clicks -->
-          <button type="button" id="navBack" class="nav-btn nav-back" aria-label="Previous page">
-            <img src="../the%20great%20fish%20rescue/back%20button.png" alt="Back">
-          </button>
-          <button type="button" id="navNext" class="nav-btn nav-next" aria-label="Next page">
-            <img src="../the%20great%20fish%20rescue/Next%20button.png" alt="Next">
-          </button>
+          <!-- Back / Next buttons removed — pages turn by peeling a corner. -->
           <!-- Start button — shown only on the cover/thumbnail page; the reader
                must click it to begin (the cover no longer auto-advances). -->
           <button type="button" id="navStart" class="start-btn" aria-label="Start">
-            <img src="../the%20great%20fish%20rescue/Start%20button.png" alt="Start">
+            <img src="../assets/ui/buttons/start-button.png" alt="Start">
           </button>
         </div>
       </div>
@@ -4778,12 +4759,51 @@
              + sun(940,540,1)+sun(850,470,.85);
       }
 
+      /* ── Desert decoration — soft dunes, a gentle sun, and tiny distant palm
+         silhouettes. Drawn in the #themeDecor SVG (viewBox 1000x600, stretched
+         to the viewport). Broad horizontal dunes read well even when stretched;
+         everything is low-opacity and warm-toned so it never competes with the
+         book in the centre. Tune the fill colours below to restyle the dunes. */
+      function decorDesert(){
+        function palm(x,y,s){
+          s = s || 1;
+          var c = 'rgba(122,72,28,0.28)';
+          return '<g transform="translate('+x+','+y+') scale('+s+')" fill="'+c+'">'
+            + '<path d="M-3,0 C-6,-30 -4,-55 -2,-72 L2,-72 C3,-55 4,-30 3,0 Z"/>'
+            + '<path d="M0,-70 C-16,-86 -36,-84 -50,-72 C-34,-80 -17,-77 0,-66 Z"/>'
+            + '<path d="M0,-70 C16,-86 36,-84 50,-72 C34,-80 17,-77 0,-66 Z"/>'
+            + '<path d="M0,-72 C-9,-95 -5,-113 5,-122 C-2,-108 -2,-90 2,-70 Z"/>'
+            + '<path d="M0,-70 C14,-90 33,-94 49,-90 C33,-90 16,-82 2,-66 Z"/>'
+            + '<path d="M0,-70 C-14,-90 -33,-94 -49,-90 C-33,-90 -16,-82 -2,-66 Z"/>'
+            + '</g>';
+        }
+        var s = '';
+        /* Soft sun glow + gentle disc, upper-left */
+        s += '<defs><radialGradient id="dsSun" cx="50%" cy="50%" r="50%">'
+           +   '<stop offset="0%"  stop-color="rgba(255,250,226,0.85)"/>'
+           +   '<stop offset="55%" stop-color="rgba(255,241,196,0.22)"/>'
+           +   '<stop offset="100%" stop-color="rgba(255,241,196,0)"/>'
+           + '</radialGradient></defs>';
+        s += '<ellipse cx="255" cy="120" rx="300" ry="230" fill="url(#dsSun)"/>';
+        s += '<circle cx="248" cy="112" r="42" fill="rgba(255,248,218,0.85)"/>';
+        /* Three overlapping dune bands, back to front */
+        s += '<path d="M0,468 C220,405 430,452 640,434 C820,418 920,452 1000,438 L1000,600 L0,600 Z" fill="rgba(236,170,70,0.32)"/>';
+        s += '<path d="M0,520 C180,470 380,505 560,500 C760,494 900,520 1000,506 L1000,600 L0,600 Z" fill="rgba(224,146,52,0.42)"/>';
+        s += '<path d="M0,560 C240,526 470,560 700,552 C850,547 940,562 1000,556 L1000,600 L0,600 Z" fill="rgba(206,124,40,0.48)"/>';
+        /* Tiny distant palms resting on the dunes */
+        s += palm(120, 470, 0.8) + palm(884, 452, 0.7);
+        return s;
+      }
+
       /* ── THEMES — change ACTIVE_THEME above to switch ── */
       var THEMES = {
         // From screenshots
         sky:         { bg:'#A4E5F5', cover:'#F26AAB', coverDark:'#C44A86', coverLight:'#FF8FC2', accent:'#F26AAB', decor:function(){ return decorClouds('white'); } },
         starPink:    { bg:'#F582B6', cover:'#FFD93D', coverDark:'#D9A800', coverLight:'#FFE873', accent:'#1FB5A8', decor:function(){ return decorStars('rgba(217,90,150,.55)', 1.1); } },
-        pawYellow:   { bg:'#FFD93D', cover:'#7B2630', coverDark:'#5C1B23', coverLight:'#9C3641', accent:'#7B2630', decor:function(){ return decorPaws('rgba(243,180,42,.55)'); } },
+        /* pawYellow is now the DESERT theme (bg gradient must stay identical to
+           the :root --theme-bg fallback above). Cover colours left unchanged so
+           the flipbook border/shadow is untouched. */
+        pawYellow:   { bg:'radial-gradient(circle at 25% 20%, rgba(255,249,214,0.90) 0%, rgba(255,244,190,0.25) 30%, rgba(255,244,190,0) 55%), linear-gradient(180deg, #FFE38A 0%, #FBC64F 45%, #EFA53A 100%)', cover:'#7B2630', coverDark:'#5C1B23', coverLight:'#9C3641', accent:'#7B2630', decor:function(){ return decorDesert(); } },
         toolBlue:    { bg:'#48D6F2', cover:'#7B2FBE', coverDark:'#5e18a8', coverLight:'#9B4FDE', accent:'#7B2FBE', decor:function(){ return decorTools('rgba(120,210,235,.55)'); } },
         starYellow:  { bg:'#FFD93D', cover:'#7B2FBE', coverDark:'#5e18a8', coverLight:'#9B4FDE', accent:'#7B2FBE', decor:function(){ return decorStars('rgba(255,220,0,.45)', 1); } },
 
@@ -4843,26 +4863,24 @@
       /* Build the story media from the uploaded "The Great Fish Rescue" assets. */
       STORY.title = "The Great Fish Rescue";
       STORY.pages = (function(){
-        var mediaBase = "../the great fish rescue/";
+        var mediaBase = "../assets/pages/";
         /* Assets for "The Great Fish Rescue".
-           Order matters: the Thumbnail cover is FIRST (becomes flipbook page 1),
-           then the numbered story pages 1 → 10 in numeric order. 10 is listed
-           AFTER 9 (not after 1) so numeric order is preserved.
-           Real filenames (with their extensions) are listed verbatim so no
-           file is renamed. Type is auto-detected below: .mp4 → video,
+           Order matters: the thumbnail cover is FIRST (becomes flipbook page 1),
+           then the numbered story pages page-01 → page-10 in numeric order.
+           Type is auto-detected below: .mp4 → video,
            .png/.jpg/.jpeg/.webp → image. */
         var mediaFiles = [
-          "Thumbnail.png",
-          "1.mp4",
-          "2.mp4",
-          "3.mp4",
-          "4.mp4",
-          "5.mp4",
-          "6.mp4",
-          "7.mp4",
-          "8.mp4",
-          "9.mp4",
-          "10.mp4"
+          "thumbnail.png",
+          "page-01.mp4",
+          "page-02.mp4",
+          "page-03.mp4",
+          "page-04.mp4",
+          "page-05.mp4",
+          "page-06.mp4",
+          "page-07.mp4",
+          "page-08.mp4",
+          "page-09.mp4",
+          "page-10.mp4"
         ];
 
         /* Build a plain media page for each asset. Type is auto-detected so
@@ -4905,6 +4923,19 @@
 
       var TOTAL = STORY.pages.length;
 
+      /* Page 1 is the cover/thumbnail; story pages start at page 2. Hoisted to
+         module scope so the turn.js gate and the nav/tutorial logic agree. */
+      var FIRST_STORY_PAGE = 2;
+      /* True while the CURRENT page may be flipped by a manual corner peel
+         (i.e. its video has finished, or it is a static page that has settled).
+         The cover is never flip-ready — it advances only via the Start button. */
+      var flipReady = false;
+      /* Assigned by the flip-tutorial controller further down; scheduleNavReveal
+         calls these once a page becomes flip-ready so the corner-peel demo can
+         teach first-time readers how to turn the page. */
+      var scheduleFlipTutorial = function(){};
+      var cancelFlipTutorial   = function(){};
+
 
       /* Build flipbook pages (single-page landscape):
          Layout: dummy | P0 | P1 | P2 | … | dummy
@@ -4918,11 +4949,13 @@
       var trackedPageAudios = [];
 
       /* ── Page-flip gating ──
-         Manual flipping (drag/swipe/corner peel/click) is disabled. Pages may
-         turn ONLY through the custom buttons (or keyboard, which is routed
-         through the same button logic). Every legitimate, programmatic turn
-         is wrapped so `flipAllowed` is true while turn.js fires its 'turning'
-         event; the 'turning' handler cancels any turn that isn't flagged. */
+         Pages turn by a manual corner peel (turn.js native drag/click) once the
+         page is flip-ready (see `flipReady`), and by keyboard arrows / the
+         programmatic API. Every legitimate programmatic turn is wrapped so
+         `flipAllowed` is true while turn.js fires its 'turning' event; the
+         'turning' handler allows flagged turns and flip-ready manual peels, and
+         cancels everything else (e.g. peeling a page whose video is still
+         playing, or peeling back onto the cover). */
       var flipAllowed = false;
       function guardedFlip(fn){
         flipAllowed = true;
@@ -6631,8 +6664,8 @@
       }
 
       /* ── Balloons ── */
-      /* Preload custom balloon pop sound — place an MP3 at "balloon-pop.mp3" in the same folder */
-      var BALLOON_POP_MP3 = "balloon-pop.mp3"; // ← change this path to your MP3 file
+      /* Preload custom balloon pop sound — place an MP3 at assets/audio/sfx/balloon-pop.mp3 (optional; synth fallback if absent) */
+      var BALLOON_POP_MP3 = "../assets/audio/sfx/balloon-pop.mp3"; // ← change this path to your MP3 file
       (function preloadPopSound(){
         var a = new Audio(BALLOON_POP_MP3);
         a.preload = 'auto';
@@ -6642,7 +6675,7 @@
 
       /* Preload page-turn sound (same clip for forward + back) */
       (function preloadPageTurnSounds(){
-        var PAGE_TURN_MP3 = 'page.mp3';
+        var PAGE_TURN_MP3 = '../assets/audio/sfx/page.mp3';
         ['forward','back'].forEach(function(name){
           var a = new Audio(PAGE_TURN_MP3);
           a.preload = 'auto';
@@ -6745,7 +6778,7 @@
         $('.balloon-container').remove();
         /* Play confetti pop sound */
         try{
-          var pop = registerPageAudio(new Audio('confetti-pop.mp3'));
+          var pop = registerPageAudio(new Audio('../assets/audio/sfx/confetti-pop.mp3'));
           pop.volume = 0.9;
           pop.play().catch(function(){});
         }catch(e){}
@@ -6854,16 +6887,20 @@
           acceleration: true,
           duration:  760,
           direction: 'ltr',
-          /* cornerSize 0 disables native corner-peel/click/drag flipping so
-             pages turn ONLY via the custom Back/Next buttons. Programmatic
-             turn('next'/'previous'/'page') is unaffected by this. */
-          cornerSize: 0,
+          /* cornerSize 100 gives a generous grab area at the page corners so the
+             reader can peel/drag a page to turn it. Programmatic turns
+             (turn('next'/'previous'/'page')) are unaffected. */
+          cornerSize: 100,
             when: {
               turning: function(e, page, view){
-                /* Hard gate: cancel ANY flip not initiated by our buttons /
-                   keyboard (i.e. any leftover manual drag/swipe/corner attempt).
-                   guardedFlip() sets flipAllowed=true around legitimate turns. */
-                if(!flipAllowed){ e.preventDefault(); return; }
+                /* Manual corner peel (flipAllowed === false): only permit it once
+                   the current page is flip-ready (video finished / page settled),
+                   and never let a peel drag the reader back onto the cover.
+                   Programmatic turns set flipAllowed=true via guardedFlip(). */
+                if(!flipAllowed){
+                  if(!flipReady){ e.preventDefault(); return; }
+                  if(page < FIRST_STORY_PAGE){ e.preventDefault(); return; }
+                }
                 /* Block navigation to dummy pages (first and last) */
                 var lastPage = TOTAL;
                 if(page < 1 || page > lastPage){ e.preventDefault(); return; }
@@ -6930,19 +6967,21 @@
           }
         });
 
-        /* ── Custom Back / Next navigation buttons ──
-           Pages flip ONLY through these (native corner-peel disabled via
-           cornerSize:0 above). We use turn.js's existing programmatic
-           methods rather than building a new paging system. */
+        /* ── Page-reveal timing engine (formerly the Back / Next buttons) ──
+           The buttons are gone; pages turn by a native corner peel. This block
+           still owns the timing: it decides WHEN each page becomes flip-ready
+           (cover → Start button; video page → when the video ends; static page →
+           after a short settle) and hands that moment to markFlipReady(). */
         (function setupNavButtons(){
           var $fbNav      = $('#flipbook');
-          var navBackBtn  = document.getElementById('navBack');
-          var navNextBtn  = document.getElementById('navNext');
+          /* The Back / Next buttons no longer exist in the DOM (pages turn by
+             corner peel). Fall back to detached, never-shown elements so the
+             legacy reveal-timing engine keeps working untouched — its
+             .classList toggles simply have no visible effect now. */
+          var navBackBtn  = document.getElementById('navBack')  || document.createElement('button');
+          var navNextBtn  = document.getElementById('navNext')  || document.createElement('button');
           var navStartBtn = document.getElementById('navStart');
-          if(!navBackBtn || !navNextBtn) return;
 
-          /* Page 1 is the cover/thumbnail; story pages start at page 2. */
-          var FIRST_STORY_PAGE = 2;
           var navRevealTimer  = null;
           var navAttractTimer = null;
           var watchedVideo    = null;   // current page's video we're waiting on
@@ -6980,13 +7019,24 @@
             }
           }
 
-          /* Hide both buttons immediately and clear any pending reveal/pulse. */
+          /* Lock the page (no manual flip), stop any tutorial, and clear any
+             pending reveal/pulse. Called on every real turn and while turning. */
           function hideNavButtons(){
             clearTimeout(navRevealTimer);
             cancelNavAttract();
+            flipReady = false;
+            cancelFlipTutorial();
             navBackBtn.classList.remove('nav-visible');
             navNextBtn.classList.remove('nav-visible');
             hideStartButton();
+          }
+
+          /* The current page is ready to be flipped by a corner peel. Unlock it
+             and, a few seconds later, play the corner-peel tutorial to teach the
+             gesture (it self-cancels the moment the reader flips). */
+          function markFlipReady(){
+            flipReady = true;
+            scheduleFlipTutorial();
           }
 
           /* Show / hide the cover Start button. */
@@ -7048,35 +7098,39 @@
               return;
             }
 
-            /* Video story page: wait for the main video to finish, then 1.5s. */
+            /* Video story page: unlock the corner peel as soon as the main
+               video finishes. markFlipReady() then schedules the corner-peel
+               tutorial 5s later (the "flip the book" teach after the video). */
             if(video){
               if(video.dataset.hasEnded === 'true'){
-                navRevealTimer = setTimeout(showNavForCurrentPage, 1500);
+                markFlipReady();
               } else {
                 watchedVideo   = video;
                 watchedHandler = function(){
                   detachWatchedVideo();
-                  navRevealTimer = setTimeout(showNavForCurrentPage, 1500);
+                  markFlipReady();
                 };
                 video.addEventListener('ended', watchedHandler);
               }
               return;
             }
 
-            /* Static / image page: assets are preloaded, so reveal after the
-               soft 3s settle delay. */
-            navRevealTimer = setTimeout(showNavForCurrentPage, 3000);
+            /* Static / image page: assets are preloaded, so unlock the peel
+               after the soft 3s settle delay. */
+            navRevealTimer = setTimeout(markFlipReady, 3000);
           }
 
-          /* Navigation — gated by visibility so a hidden button never flips. */
+          /* Keyboard navigation — gated by flipReady so arrows behave exactly
+             like a corner peel: they never flip while a video is still playing,
+             and Back never peels past the first story page onto the cover. */
           function goNext(){
-            if(!navNextBtn.classList.contains('nav-visible')) return;
-            cancelNavAttract();
+            if(!flipReady) return;
+            cancelFlipTutorial();
             flipBookNext();
           }
           function goPrev(){
-            if(!navBackBtn.classList.contains('nav-visible')) return;
-            cancelNavAttract();
+            if(!flipReady || currentPage() <= FIRST_STORY_PAGE) return;
+            cancelFlipTutorial();
             flipBookPrev();
           }
 
@@ -7096,12 +7150,31 @@
           navNextBtn.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); goNext(); });
           if(navStartBtn) navStartBtn.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); goStart(); });
 
-          /* Hide while turning; re-evaluate when the new page settles. These
-             are separate listeners — they don't touch the existing handlers.
-             Only hide for a REAL turn (flipAllowed): a cancelled corner-peel
-             attempt fires 'turning' but is preventDefault()'d in when.turning,
-             so no 'turned' follows. Hiding there would strand the Next button
-             permanently, since scheduleNavReveal() never gets to re-show it. */
+          /* ── Swallow hover/drag events over the nav buttons ──
+             turn.js binds mousemove/mouseup on document and mousedown/mouseover
+             on the book, so pointer motion over a button would otherwise bubble
+             up and feed turn.js's corner-peel/fold logic. Stopping propagation
+             here keeps the page underneath from ever seeing hover/move/press
+             events, so no page-curl/peel/corner preview appears on hover — the
+             page turns ONLY via the click handlers above. */
+          ['mouseenter','mouseover','mousemove','mousedown',
+           'pointerenter','pointerover','pointermove','pointerdown',
+           'touchstart','touchmove'].forEach(function(evtName){
+            [navBackBtn, navNextBtn, navStartBtn].forEach(function(btn){
+              if(!btn) return;
+              btn.addEventListener(evtName, function(e){ e.stopPropagation(); },
+                evtName === 'touchmove' ? { passive: true } : false);
+            });
+          });
+
+          /* Lock the page while turning; re-arm flip-readiness once the new page
+             settles. Only lock for a committed turn: a prevented corner-peel
+             (peeling while the video plays, or peeling back onto the cover)
+             fires 'turning' but is preventDefault()'d in when.turning with no
+             'turned' to follow. Locking there would freeze the page as
+             un-flippable, since scheduleNavReveal() never runs to re-arm it.
+             (flipAllowed is true only for programmatic turns; a real manual peel
+             is un-flagged but still gets its 'turned' → hideNavButtons below.) */
           $fbNav.bind('turning', function(){ if(flipAllowed) hideNavButtons(); });
           $fbNav.bind('turned',  function(){ hideNavButtons(); scheduleNavReveal(); });
 
@@ -7114,94 +7187,85 @@
           scheduleNavReveal();
         })();
 
-        /* ── Corner peel hint — plays after 3 s of inactivity ── */
-        if(false){
-        var $cornerHint = $('<div class="page-turn-hint"></div>');
-        $('.flipbook-viewport').append($cornerHint);
+        /* ── Corner grab-and-lift flip tutorial ──
+           A wordless hand nudge that reaches the bottom-right corner, grips it,
+           and lifts it slightly to show the page can be flipped, then settles it
+           back. It cancels instantly the moment the reader grabs a corner or a
+           page turns, so after a flip it disappears.
+             • First story page: appears immediately when the intro animation
+               video ends and keeps nudging until the child flips.
+             • Later pages: a gentle reminder that appears only after the child
+               has lingered on the page for 15 s, plays a couple of times, rests.
+           scheduleFlipTutorial()/cancelFlipTutorial() are the module-scoped
+           hooks that scheduleNavReveal()/hideNavButtons() drive. */
+        (function setupFlipTutorial(){
+          var $viewport = $('.flipbook-viewport');
 
-        var _hintTimer = null, _hintPlaying = false;
-        var HINT_DELAY = 3000, HINT_DUR = 2800;
-
-        function _isLastPage(){
-          try{ return $('#flipbook').turn('page') >= STORY.pages.length; }
-          catch(e){ return false; }
-        }
-
-        function _playHint(){
-          if(_hintPlaying || _isLastPage()) return;
-          _hintPlaying = true;
-          $cornerHint.removeClass('active');
-          void $cornerHint[0].offsetWidth; /* restart animation */
-          $cornerHint.addClass('active');
-          _hintTimer = setTimeout(function(){
-            $cornerHint.removeClass('active');
-            _hintPlaying = false;
-            _scheduleHint();
-          }, HINT_DUR);
-        }
-
-        function _scheduleHint(){
-          clearTimeout(_hintTimer);
-          _hintTimer = setTimeout(_playHint, HINT_DELAY);
-        }
-
-        function _cancelHint(){
-          clearTimeout(_hintTimer);
-          $cornerHint.removeClass('active');
-          _hintPlaying = false;
-          _scheduleHint(); /* restart the 3 s clock */
-        }
-
-        _scheduleHint();
-        $(document).on('mousemove.hint touchstart.hint mousedown.hint', _cancelHint);
-        $('#flipbook').bind('turning', _cancelHint);
-
-        /* Swipe-hand demo — plays 3 loops on first visit, never again */
-        var HINT_KEY = 'ebk_swipe_seen';
-        if(!localStorage.getItem(HINT_KEY)){
+          /* Peeling corner (reuses the .page-turn-hint corner-fold visual) */
+          var $cornerHint = $('<div class="page-turn-hint"></div>');
           /* Hand SVG (Material "swipe" icon, white fill + dark outline) */
           var handSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="64" height="64">'
             + '<path fill="rgba(0,0,0,.55)" d="M11 5.5C11 4.12 12.12 3 13.5 3S16 4.12 16 5.5V11c.55-.34 1.2-.5 1.88-.5 1.27 0 2.39.75 2.91 1.88.44-.19.91-.28 1.38-.28C23.27 12.1 24 13.38 24 14.81V17c0 3.31-2.69 6-6 6h-4.27C11.34 23 9 20.66 9 17.78V12c0-1.38 1.12-2.5 2.5-2.5.18 0 .35.02.5.05V5.5z"/>'
             + '<path fill="#ffffff" d="M11.5 5.5C11.5 4.4 12.4 3.5 13.5 3.5S15.5 4.4 15.5 5.5v6.5l1 .58c.44-.34.98-.58 1.57-.58 1.1 0 2 .75 2.27 1.76l.73-.26c.35-.12.72-.18 1.1-.18.96 0 1.83.63 1.83 1.49V17c0 3.03-2.47 5.5-5.5 5.5h-4.27C11.64 22.5 9.5 20.36 9.5 17.78V12c0-1.1.9-2 2-2 .35 0 .68.09.96.26L11.5 9.5V5.5z"/>'
             + '</svg>';
+          var $hand  = $('<div class="swipe-hand-demo"></div>').html(handSvg);
+          $viewport.append($cornerHint).append($hand);
 
-          var $label  = $('<div class="swipe-hint-label">Peel corner to flip</div>');
-          var $hand   = $('<div class="swipe-hand-demo"></div>').html(handSvg);
-          $('.flipbook-viewport').append($label).append($hand);
+          var startTimer = null, loopTimer = null;
+          var loops = 0, MAX_LOOPS = 2;
+          var TUTORIAL_DELAY = 15000;  /* 15 s of lingering before the reminder on later pages */
+          var CYCLE = 2400;            /* matches the cornerLift / handGrabLift animation */
+          var persist = false;         /* first page: keep nudging until the child flips */
 
-          var loops = 0, MAX_LOOPS = 3;
-          var CYCLE = 1600; /* ms — matches animation duration */
+          function turnPage(){
+            try{ return $('#flipbook').turn('page'); }
+            catch(e){ return 0; }
+          }
+          function isLastPage(){ return turnPage() >= TOTAL; }
+          function isFirstStoryPage(){ return turnPage() === FIRST_STORY_PAGE; }
+
+          function hideVisuals(){
+            $cornerHint.removeClass('active');
+            $hand.removeClass('run');
+          }
 
           function runLoop(){
-            if(loops >= MAX_LOOPS){ teardown(); return; }
+            /* Stop if the page is no longer flippable or nothing left to flip. */
+            if(!flipReady || isLastPage()){ hideVisuals(); return; }
+            /* On later pages the reminder plays a couple of times then rests;
+               on the first page it persists until the child flips. */
+            if(!persist && loops >= MAX_LOOPS){ hideVisuals(); return; }
             loops++;
-            $hand.removeClass('run');
-            /* Force reflow to restart CSS animation */
-            void $hand[0].offsetWidth;
+            /* Restart both CSS animations from the top. */
+            $cornerHint.removeClass('active'); $hand.removeClass('run');
+            void $cornerHint[0].offsetWidth; void $hand[0].offsetWidth;
+            $cornerHint.addClass('active');
             $hand.addClass('run');
-            setTimeout(runLoop, CYCLE + 800); /* pause between loops */
+            loopTimer = setTimeout(runLoop, CYCLE + 700); /* small pause between loops */
           }
 
-          function teardown(){
-            $label.removeClass('show');
-            setTimeout(function(){ $label.remove(); $hand.remove(); }, 400);
-            localStorage.setItem(HINT_KEY, '1');
-          }
+          scheduleFlipTutorial = function(){
+            clearTimeout(startTimer); clearTimeout(loopTimer);
+            loops = 0; hideVisuals();
+            if(!flipReady || isLastPage()) return;
+            /* First page: show the moment the animation video ends and keep
+               nudging. Later pages: hold off until 15 s of inactivity. */
+            persist = isFirstStoryPage();
+            startTimer = setTimeout(runLoop, persist ? 0 : TUTORIAL_DELAY);
+          };
 
-          /* Start after the book settles */
-          setTimeout(function(){
-            $label.addClass('show');
-            setTimeout(runLoop, 300);
-          }, 2200);
-
-          /* If user turns a page themselves, cancel the demo immediately */
-          $('#flipbook').one('turning', function(){
+          cancelFlipTutorial = function(){
+            clearTimeout(startTimer); clearTimeout(loopTimer);
             loops = MAX_LOOPS;
-            teardown();
-          });
-        }
+            persist = false;
+            hideVisuals();
+          };
 
-        }
+          /* The instant the reader grabs a corner (or a page turns), stop
+             teaching — they're already doing it. */
+          $viewport.on('pointerdown.fliptut touchstart.fliptut', cancelFlipTutorial);
+          $('#flipbook').bind('turning', cancelFlipTutorial);
+        })();
 
         /* Jump to page 1 (first real spread) without animation. Wrapped in
            guardedFlip so the 'turning' gate allows this programmatic set. */
@@ -7242,16 +7306,15 @@
         document.addEventListener('touchstart',  _docUnlockAudio, { once: true, capture: true, passive: true });
         document.addEventListener('click',       _docUnlockAudio, { once: true, capture: true });
 
-        /* The book spine used to flip to the previous page on click. Manual
-           flipping is now disabled — pages turn ONLY via the custom buttons —
-           so the spine no longer navigates. It is kept solely as a first-gesture
-           audio unlock. */
+        /* The book spine does not navigate; it is kept solely as a first-gesture
+           audio unlock. Page turns happen by peeling a page corner. */
         $('.book-spine').off('.videoSound').on('pointerdown.videoSound mousedown.videoSound touchstart.videoSound', function(){
           armVideoSound();
         });
 
-        /* NOTE: native corner peeling is disabled via cornerSize:0 and the
-           'turning' gate above, so there is no drag/click page-fold gesture. */
+        /* NOTE: native corner peeling is enabled (cornerSize:100). The 'turning'
+           gate above only permits a manual peel once the page is flip-ready, and
+           blocks peeling back onto the cover. */
 
       }
 
