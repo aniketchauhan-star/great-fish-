@@ -392,18 +392,21 @@
         transform-origin: 100% 100%;   /* pivot at the bottom-right corner */
       }
       .flip-nudge.run {
-        animation: nudgeLift 2.4s ease-in-out forwards;
+        animation: nudgeLift 2.8s ease-in-out infinite;
       }
-      /* Hand grips the corner (~14%), peels it up with a gentle tilt while
-         barely leaving the corner (~55%), then eases back and releases (~78%).
-         The lift is expressed mostly as a tilt + the fold growing, so the hand
-         stays sitting on the corner instead of drifting onto the page. */
+      /* One slow, friendly cycle that loops while the child is idle:
+         fade in gently up-left of the corner → glide down onto the corner →
+         grip → lift the corner a little (a small flip preview) → ease it back
+         down → fade out → short rest, then repeat. Deliberately slow and soft
+         for young children — no harsh movement. */
       @keyframes nudgeLift {
-        0%   { opacity: 0;   transform: translate(3px, 4px)   rotate(0deg);   }
-        14%  { opacity: 1;   transform: translate(0, 0)       rotate(0deg);   } /* gripped on corner */
-        55%  { opacity: 1;   transform: translate(-8px, -10px) rotate(-10deg); } /* corner lifts */
-        78%  { opacity: 0.7; transform: translate(-2px, -3px) rotate(-3deg);  } /* easing back */
-        100% { opacity: 0;   transform: translate(3px, 4px)   rotate(0deg);   }
+        0%   { opacity: 0;   transform: translate(-12px, -14px) rotate(-6deg); } /* soft fade-in */
+        16%  { opacity: 1;   transform: translate(0, 0)         rotate(0deg);  } /* glides onto corner */
+        30%  { opacity: 1;   transform: translate(0, 0)         rotate(0deg);  } /* grips */
+        52%  { opacity: 1;   transform: translate(-7px, -9px)   rotate(-9deg); } /* lifts corner (preview) */
+        70%  { opacity: 1;   transform: translate(0, 0)         rotate(0deg);  } /* eases back down */
+        84%  { opacity: 0;   transform: translate(-12px, -14px) rotate(-6deg); } /* fades out */
+        100% { opacity: 0;   transform: translate(-12px, -14px) rotate(-6deg); } /* gentle rest */
       }
 
       /* The peeling corner fold, pinned to the wrapper's bottom-right corner.
@@ -416,6 +419,7 @@
         height: 76px;
         transform: scale(0);
         transform-origin: 100% 100%;   /* grows from the pinned corner */
+        pointer-events: none;          /* never intercept the corner peel/tap */
         background: linear-gradient(315deg,
           #f5f5ed 0%,
           #e8e8de 26%,
@@ -424,13 +428,15 @@
         box-shadow: -4px -4px 12px rgba(0,0,0,0.22);
       }
       .flip-nudge.run .corner-fold {
-        animation: foldGrow 2.4s ease-in-out forwards;
+        animation: foldGrow 2.8s ease-in-out infinite;
       }
       @keyframes foldGrow {
         0%   { transform: scale(0);    }
-        14%  { transform: scale(0.18); } /* corner caught */
-        55%  { transform: scale(0.95); } /* fully peeled */
-        78%  { transform: scale(0.28); } /* settling */
+        16%  { transform: scale(0.14); } /* caught as the hand arrives */
+        30%  { transform: scale(0.14); }
+        52%  { transform: scale(0.9);  } /* peels up with the hand */
+        70%  { transform: scale(0.14); } /* returns */
+        84%  { transform: scale(0);    } /* flat */
         100% { transform: scale(0);    }
       }
 
@@ -7204,84 +7210,98 @@
           scheduleNavReveal();
         })();
 
-        /* ── Corner grab-and-lift flip tutorial ──
-           A wordless hand nudge that reaches the bottom-right corner, grips it,
-           and lifts it slightly to show the page can be flipped, then settles it
-           back. It cancels instantly the moment the reader grabs a corner or a
-           page turns, so after a flip it disappears.
-             • First story page: appears immediately when the intro animation
-               video ends and keeps nudging until the child flips.
-             • Later pages: a gentle reminder that appears only after the child
-               has lingered on the page for 15 s, plays a couple of times, rests.
+        /* ── Wordless corner grab-and-lift flip hint ──
+           A cute white cartoon hand that appears near the bottom-right corner,
+           gently grabs it, and lifts it a little (a small preview of flipping),
+           then settles it back — looping softly WHILE the child is idle. There
+           is no text anywhere. Behaviour, uniform on every flippable page:
+             • Show only after the page has been stable & untouched for 15 s.
+             • Hide instantly the moment the child flips (or taps a corner).
+             • After a flip it never returns immediately; the next page starts
+               a fresh 15 s idle countdown.
+           The hint is pointer-events:none top to bottom, so it never blocks
+           taps on the page, the corner peel, or the nav buttons.
            scheduleFlipTutorial()/cancelFlipTutorial() are the module-scoped
            hooks that scheduleNavReveal()/hideNavButtons() drive. */
         (function setupFlipTutorial(){
           var $viewport = $('.flipbook-viewport');
 
-          /* Hand SVG (Material "swipe" icon, white fill + dark outline) */
+          /* White cartoon hand SVG (soft dark outline + drop shadow via CSS) */
           var handSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="60" height="60">'
             + '<path fill="rgba(0,0,0,.55)" d="M11 5.5C11 4.12 12.12 3 13.5 3S16 4.12 16 5.5V11c.55-.34 1.2-.5 1.88-.5 1.27 0 2.39.75 2.91 1.88.44-.19.91-.28 1.38-.28C23.27 12.1 24 13.38 24 14.81V17c0 3.31-2.69 6-6 6h-4.27C11.34 23 9 20.66 9 17.78V12c0-1.38 1.12-2.5 2.5-2.5.18 0 .35.02.5.05V5.5z"/>'
             + '<path fill="#ffffff" d="M11.5 5.5C11.5 4.4 12.4 3.5 13.5 3.5S15.5 4.4 15.5 5.5v6.5l1 .58c.44-.34.98-.58 1.57-.58 1.1 0 2 .75 2.27 1.76l.73-.26c.35-.12.72-.18 1.1-.18.96 0 1.83.63 1.83 1.49V17c0 3.03-2.47 5.5-5.5 5.5h-4.27C11.64 22.5 9.5 20.36 9.5 17.78V12c0-1.1.9-2 2-2 .35 0 .68.09.96.26L11.5 9.5V5.5z"/>'
             + '</svg>';
-          /* Single wrapper: the peeling fold + the hand together. The wrapper
-             does the lift, so the hand stays glued to the corner as it rises. */
+          /* One wrapper holds the peeling fold + the hand. The wrapper performs
+             the lift so the hand stays glued to the corner as it rises. CSS
+             (.flip-nudge.run) drives the whole gentle looping gesture. */
           var $nudge = $('<div class="flip-nudge"></div>')
             .append('<div class="corner-fold"></div>')
             .append($('<div class="nudge-hand"></div>').html(handSvg));
           $viewport.append($nudge);
 
-          var startTimer = null, loopTimer = null;
-          var loops = 0, MAX_LOOPS = 2;
-          var TUTORIAL_DELAY = 15000;  /* 15 s of lingering before the reminder on later pages */
-          var CYCLE = 2400;            /* matches the nudgeLift / foldGrow animation */
-          var persist = false;         /* first page: keep nudging until the child flips */
+          /* ── State ── */
+          var hasUserFlippedPage = false; /* true once the child has turned a page */
+          var idleTimer          = null;  /* 15 s "no interaction" countdown */
+          var isNudgeVisible     = false; /* is the hand hint currently showing */
+          var canFlipPage        = false; /* does the current page allow a flip */
+          var IDLE_DELAY         = 15000; /* stillness required before hinting */
 
-          function turnPage(){
-            try{ return $('#flipbook').turn('page'); }
-            catch(e){ return 0; }
+          function isLastPage(){
+            try{ return $('#flipbook').turn('page') >= TOTAL; }
+            catch(e){ return false; }
           }
-          function isLastPage(){ return turnPage() >= TOTAL; }
-          function isFirstStoryPage(){ return turnPage() === FIRST_STORY_PAGE; }
 
-          function hideVisuals(){
+          function showNudge(){
+            if(!canFlipPage || isNudgeVisible) return;
+            isNudgeVisible = true;
+            $nudge.addClass('run');   /* CSS loops the gesture until removed */
+          }
+          function hideNudge(){
+            isNudgeVisible = false;
             $nudge.removeClass('run');
           }
 
-          function runLoop(){
-            /* Stop if the page is no longer flippable or nothing left to flip. */
-            if(!flipReady || isLastPage()){ hideVisuals(); return; }
-            /* On later pages the reminder plays a couple of times then rests;
-               on the first page it persists until the child flips. */
-            if(!persist && loops >= MAX_LOOPS){ hideVisuals(); return; }
-            loops++;
-            /* Restart the gesture from the top (re-trigger both child anims). */
-            $nudge.removeClass('run');
-            void $nudge[0].offsetWidth;
-            $nudge.addClass('run');
-            loopTimer = setTimeout(runLoop, CYCLE + 700); /* small pause between loops */
+          /* (Re)start the 15 s idle countdown — the hint only appears after the
+             child has been still (no flip, no tap) for the full delay. */
+          function armIdleTimer(){
+            clearTimeout(idleTimer); idleTimer = null;
+            if(!canFlipPage) return;
+            idleTimer = setTimeout(showNudge, IDLE_DELAY);
           }
 
+          /* Called by markFlipReady() once a page has settled and can be flipped
+             — i.e. the moment the page becomes "stable". Arms the idle timer. */
           scheduleFlipTutorial = function(){
-            clearTimeout(startTimer); clearTimeout(loopTimer);
-            loops = 0; hideVisuals();
-            if(!flipReady || isLastPage()) return;
-            /* First page: show the moment the animation video ends and keep
-               nudging. Later pages: hold off until 15 s of inactivity. */
-            persist = isFirstStoryPage();
-            startTimer = setTimeout(runLoop, persist ? 0 : TUTORIAL_DELAY);
+            hideNudge();
+            canFlipPage = flipReady && !isLastPage();
+            armIdleTimer();
           };
 
+          /* Called on a page turn or a forced stop: hide immediately and clear
+             the timer. The next page re-arms its own countdown via
+             scheduleFlipTutorial(), so the hint never returns right after a flip. */
           cancelFlipTutorial = function(){
-            clearTimeout(startTimer); clearTimeout(loopTimer);
-            loops = MAX_LOOPS;
-            persist = false;
-            hideVisuals();
+            clearTimeout(idleTimer); idleTimer = null;
+            canFlipPage = false;
+            hideNudge();
           };
 
-          /* The instant the reader grabs a corner (or a page turns), stop
-             teaching — they're already doing it. */
-          $viewport.on('pointerdown.fliptut touchstart.fliptut', cancelFlipTutorial);
-          $('#flipbook').bind('turning', cancelFlipTutorial);
+          /* Any tap/press means the child is engaged: hide the hint and restart
+             the idle countdown so it only comes back after real stillness. One
+             handler covers mouse, tablet and mobile touch. The hint is
+             pointer-events:none, so this never steals the tap from the page,
+             the corner peel, or the nav buttons. */
+          $viewport.on('pointerdown.fliptut touchstart.fliptut', function(){
+            hideNudge();
+            armIdleTimer();
+          });
+
+          /* A real page turn: remember it, hide the hint at once, and let the
+             next page's idle countdown decide when (if ever) to hint again. */
+          $('#flipbook').bind('turning', function(){
+            hasUserFlippedPage = true;
+            cancelFlipTutorial();
+          });
         })();
 
         /* Jump to page 1 (first real spread) without animation. Wrapped in
