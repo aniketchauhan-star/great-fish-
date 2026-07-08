@@ -28,3 +28,9 @@
   for = "/assets/audio/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000"
+
+# Self-hosted web fonts are immutable — cache them for a year.
+[[headers]]
+  for = "/assets/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000"
