@@ -239,16 +239,20 @@
         border-radius:0 2px 2px 0;
       }
 
-      /* ── Custom page-navigation buttons ──
-         Live INSIDE .flipbook-viewport so they overlay the book and stay
-         fixed while pages turn. The viewport is scaled by --book-scale
-         (0.28×–3.5×); we divide the size/offset by that scale so the buttons
-         hold a constant ~100px on screen regardless of the book scale. */
+      /* ── Page-navigation arrows (middle of the left / right page edges) ──
+         Live INSIDE .flipbook-viewport so they scale with the book (--book-scale
+         0.28×–3.5×); sizes/offsets are divided by that scale so they hold a
+         constant on-screen size on any device. Two layers so vertical centering
+         never fights the animation: the <button> WRAPPER does the placement
+         (edge + vertical centre via translateY(-50%)); the inner .nav-arrow does
+         the motion (small translateX drift) and the glow. */
       .nav-btn{
         position:absolute;
-        bottom:0;                 /* tucked into the bottom corner, touching the edge */
-        width:calc(100px / var(--book-scale, 1));
-        height:calc(100px / var(--book-scale, 1));
+        top:50%;
+        transform:translateY(-50%);          /* wrapper: vertical centring only */
+        width:calc(80px / var(--book-scale, 1));
+        height:calc(104px / var(--book-scale, 1));
+        display:flex; align-items:center; justify-content:center;
         padding:0;
         border:0;
         background:transparent;
@@ -257,31 +261,27 @@
         -webkit-tap-highlight-color:transparent;
         -webkit-appearance:none;appearance:none;
         outline:none;
-        transition:opacity .35s ease, transform .2s ease;
-        /* Hidden by default — JS adds .nav-visible only when the current page
-           is finished (video ended / image ready) and the page allows it. */
+        transition:opacity .35s ease;
+        /* Hidden by default — markFlipReady() adds .nav-visible once the page's
+           video has ended / the page has settled and a flip is allowed. */
         opacity:0;
         visibility:hidden;
         pointer-events:none;
       }
-      .nav-btn img{
+      .nav-back{ left:calc(4px / var(--book-scale, 1)); }   /* middle-LEFT edge */
+      .nav-next{ right:calc(4px / var(--book-scale, 1)); }  /* middle-RIGHT edge */
+
+      /* Inner arrow image — the only animated element (drift + steady glow). */
+      .nav-btn .nav-arrow{
         width:100%;height:100%;
         object-fit:contain;
         display:block;
         pointer-events:none;      /* clicks land on the button, not the image */
         -webkit-user-drag:none;user-select:none;
+        /* Soft, steady glow (NO pulsing / blinking / scaling). */
+        filter:drop-shadow(0 0 5px rgba(255,255,255,.9))
+               drop-shadow(0 0 13px rgba(255,231,138,.75));
       }
-      .nav-back{ left:0; transform-origin:bottom left; }   /* extreme bottom-left corner */
-      .nav-next{ right:0; transform-origin:bottom right; }  /* extreme bottom-right corner */
-
-      /* NEXT button — bigger, and sized to the trimmed triangle's own aspect
-         ratio (PNG cropped to its opaque bounds) so the visible blue triangle
-         touches the bottom and right page edges with no gap. */
-      .nav-next{
-        width:calc(150px / var(--book-scale, 1));
-        height:auto;
-      }
-      .nav-next img{ height:auto; }
 
       /* Visible + clickable state */
       .nav-btn.nav-visible{
@@ -289,29 +289,28 @@
         visibility:visible;
         pointer-events:auto;      /* only the buttons capture clicks */
       }
-      .nav-btn.nav-visible:hover{  transform:scale(1.07); }
-      .nav-btn.nav-visible:active{ transform:scale(.95); }
 
-      /* Soft pulse + glow attract animation (added 3s after page is ready) */
-      @keyframes navPulse{
-        0%,100%{ transform:scale(1);
-                 filter:drop-shadow(0 0 2px rgba(255,255,255,.35)); }
-        50%    { transform:scale(1.09);
-                 filter:drop-shadow(0 0 12px rgba(255,232,140,.95)); }
+      /* Once shown, the arrow gently drifts outward a few px and back — smooth
+         ease-in-out, no scale, no rotate, no pulse. The distance is divided by
+         the book scale so it stays ~8px on screen at any zoom. */
+      .nav-back.nav-visible .nav-arrow{ animation:navDriftLeft  1.8s ease-in-out infinite; }
+      .nav-next.nav-visible .nav-arrow{ animation:navDriftRight 1.8s ease-in-out infinite; }
+      @keyframes navDriftLeft{
+        0%,100%{ transform:translateX(0); }
+        50%    { transform:translateX(calc(-8px / var(--book-scale, 1))); }
       }
-      .nav-btn.nav-visible.nav-attract{ animation:navPulse 1.6s ease-in-out infinite; }
+      @keyframes navDriftRight{
+        0%,100%{ transform:translateX(0); }
+        50%    { transform:translateX(calc(8px / var(--book-scale, 1))); }
+      }
 
-      /* Responsive: smaller buttons on small screens (still divided by scale
-         so the on-screen size stays stable on phones/tablets) */
+      /* Responsive: slightly smaller arrows on phones (still /scale so the
+         on-screen size stays stable). Placement stays middle-left / middle-right. */
       @media (max-width: 640px){
         .nav-btn{
-          width:calc(70px / var(--book-scale, 1));
-          height:calc(70px / var(--book-scale, 1));
+          width:calc(60px / var(--book-scale, 1));
+          height:calc(84px / var(--book-scale, 1));
         }
-        /* stay tucked into the corners on small screens too */
-        .nav-back{ left:0; }
-        /* NEXT stays bigger and keeps the triangle's aspect ratio */
-        .nav-next{ right:0; width:calc(110px / var(--book-scale, 1)); height:auto; }
       }
 
       /* ── Start button (cover/thumbnail page only) ──
@@ -1129,7 +1128,17 @@
           <div id="storyOverlay"></div>
           <!-- Book spine gutter — on top of everything -->
           <div class="book-spine"></div>
-          <!-- Back / Next buttons removed — pages turn by peeling a corner. -->
+          <!-- Page-navigation arrows — middle of the left / right page edges.
+               Revealed (.nav-visible) by markFlipReady() once the page's video
+               has ended. The <button> is the placement wrapper (edge + vertical
+               centre); the inner <img class="nav-arrow"> carries the glow and the
+               gentle side-drift, so the centering transform never fights it. -->
+          <button type="button" id="navBack" class="nav-btn nav-back" aria-label="Previous page">
+            <img class="nav-arrow" src="../assets/ui/buttons/back-arrow.png" alt="Previous page">
+          </button>
+          <button type="button" id="navNext" class="nav-btn nav-next" aria-label="Next page">
+            <img class="nav-arrow" src="../assets/ui/buttons/next-arrow.png" alt="Next page">
+          </button>
           <!-- Start button — shown only on the cover/thumbnail page; the reader
                must click it to begin (the cover no longer auto-advances). -->
           <button type="button" id="navStart" class="start-btn" aria-label="Start">
@@ -6926,17 +6935,17 @@
           }
         });
 
-        /* ── Page-reveal timing engine (formerly the Back / Next buttons) ──
-           The buttons are gone; pages turn by a native corner peel. This block
-           still owns the timing: it decides WHEN each page becomes flip-ready
+        /* ── Page-reveal timing engine ──
+           Pages turn by a native corner peel AND by the Back/Next arrows. This
+           block owns the timing: it decides WHEN each page becomes flip-ready
            (cover → Start button; video page → when the video ends; static page →
-           after a short settle) and hands that moment to markFlipReady(). */
+           after a short settle) and hands that moment to markFlipReady(), which
+           unlocks the flip and reveals the arrows. */
         (function setupNavButtons(){
           var $fbNav      = $('#flipbook');
-          /* The Back / Next buttons no longer exist in the DOM (pages turn by
-             corner peel). Fall back to detached, never-shown elements so the
-             legacy reveal-timing engine keeps working untouched — its
-             .classList toggles simply have no visible effect now. */
+          /* Back / Next arrow buttons live at the middle of the left / right page
+             edges (see markup in .flipbook-viewport). The createElement fallback
+             is just a safety net if the markup is ever absent. */
           var navBackBtn  = document.getElementById('navBack')  || document.createElement('button');
           var navNextBtn  = document.getElementById('navNext')  || document.createElement('button');
           var navStartBtn = document.getElementById('navStart');
@@ -6990,10 +6999,12 @@
             hideStartButton();
           }
 
-          /* The current page is ready to be flipped by a corner peel. Unlock it.
-             (scheduleFlipTutorial is now a no-op — the flip hint was removed.) */
+          /* The current page is ready to be flipped. Unlock it and reveal the
+             middle-edge Back/Next arrows for this page (the video has ended /
+             the page has settled). scheduleFlipTutorial is a no-op now. */
           function markFlipReady(){
             flipReady = true;
+            showNavForCurrentPage();
             scheduleFlipTutorial();
           }
 
