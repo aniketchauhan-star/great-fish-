@@ -374,17 +374,48 @@
         .start-btn{ width:calc(230px / var(--book-scale, 1)); }
       }
 
-      /* ── Page turn hint — corner peel tease (inactivity-triggered) ── */
-      .page-turn-hint {
+      /* ── Corner grab-and-lift flip nudge ──
+         The whole gesture lives in one wrapper pinned to the bottom-right
+         corner. The wrapper performs the LIFT (translate up-and-inward + a
+         slight tilt), so everything inside travels together as one rigid unit —
+         the peeling fold and the hand stay locked to the same corner point, and
+         the hand reads as actually holding the corner while it rises. */
+      .flip-nudge {
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 90px;
+        height: 90px;
+        z-index: 9998;
+        pointer-events: none;
+        opacity: 0;
+        transform-origin: 100% 100%;   /* pivot at the bottom-right corner */
+      }
+      .flip-nudge.run {
+        animation: nudgeLift 2.4s ease-in-out forwards;
+      }
+      /* Hand grips the corner (~14%), peels it up with a gentle tilt while
+         barely leaving the corner (~55%), then eases back and releases (~78%).
+         The lift is expressed mostly as a tilt + the fold growing, so the hand
+         stays sitting on the corner instead of drifting onto the page. */
+      @keyframes nudgeLift {
+        0%   { opacity: 0;   transform: translate(3px, 4px)   rotate(0deg);   }
+        14%  { opacity: 1;   transform: translate(0, 0)       rotate(0deg);   } /* gripped on corner */
+        55%  { opacity: 1;   transform: translate(-8px, -10px) rotate(-10deg); } /* corner lifts */
+        78%  { opacity: 0.7; transform: translate(-2px, -3px) rotate(-3deg);  } /* easing back */
+        100% { opacity: 0;   transform: translate(3px, 4px)   rotate(0deg);   }
+      }
+
+      /* The peeling corner fold, pinned to the wrapper's bottom-right corner.
+         It only SCALES (the flap growing); the wrapper carries its motion. */
+      .flip-nudge .corner-fold {
         position: absolute;
         bottom: 0;
         right: 0;
         width: 76px;
         height: 76px;
-        z-index: 9998;
-        pointer-events: none;
         transform: scale(0);
-        transform-origin: 100% 100%;   /* anchored at bottom-right corner */
+        transform-origin: 100% 100%;   /* grows from the pinned corner */
         background: linear-gradient(315deg,
           #f5f5ed 0%,
           #e8e8de 26%,
@@ -392,45 +423,31 @@
           transparent 54%);
         box-shadow: -4px -4px 12px rgba(0,0,0,0.22);
       }
-      .page-turn-hint.active {
-        animation: cornerLift 2.4s ease-in-out forwards;
+      .flip-nudge.run .corner-fold {
+        animation: foldGrow 2.4s ease-in-out forwards;
       }
-      /* The hand reaches the corner (~15%), grips and lifts it up to reveal
-         the page can flip (~55%), then gently settles it back down (~75%).
-         A wordless, child-simple "grab the corner and lift" gesture. */
-      @keyframes cornerLift {
-        0%   { transform: scale(0);    opacity: 0;   }
-        15%  { transform: scale(0.14); opacity: 0.7; } /* corner just caught */
-        55%  { transform: scale(0.92); opacity: 1;   } /* lifted to show flip */
-        75%  { transform: scale(0.14); opacity: 0.6; } /* settling back down */
-        100% { transform: scale(0);    opacity: 0;   } /* rest before repeat */
+      @keyframes foldGrow {
+        0%   { transform: scale(0);    }
+        14%  { transform: scale(0.18); } /* corner caught */
+        55%  { transform: scale(0.95); } /* fully peeled */
+        78%  { transform: scale(0.28); } /* settling */
+        100% { transform: scale(0);    }
       }
 
-      /* ── Hand nudge that grabs & lifts the page corner ── */
-      .swipe-hand-demo {
+      /* The hand, rotated so the index finger points down into the bottom-right
+         corner: the fingertip lands right on the corner point while the rest of
+         the hand rests up-and-left on the page (fully inside the clipped
+         viewport). No animation of its own — it rides the wrapper, so it holds
+         the corner and travels with it as the wrapper lifts. */
+      .flip-nudge .nudge-hand {
         position: absolute;
-        bottom: 28px;
-        right: 28px;
-        z-index: 10000;
+        right: -8px;
+        bottom: -4px;
+        width: 56px;
+        height: 56px;
+        transform: rotate(135deg);   /* index finger points at the corner */
         pointer-events: none;
-        opacity: 0;
-        width: 64px;
-        height: 64px;
-        filter: drop-shadow(0 4px 10px rgba(0,0,0,.45));
-      }
-      .swipe-hand-demo.run {
-        animation: handGrabLift 2.4s ease-in-out forwards;
-      }
-      /* Moves toward the bottom-right corner to grip it, lifts up-and-inward
-         (dragging the peel with it), then lowers and releases. Positive x/y
-         move toward the corner because the hand is bottom/right anchored. */
-      @keyframes handGrabLift {
-        0%   { opacity: 0;   transform: translate(2px, 2px)    scale(.9); }
-        15%  { opacity: 1;   transform: translate(8px, 8px)    scale(1);  } /* reach & grip corner */
-        30%  { opacity: 1;   transform: translate(8px, 8px)    scale(1);  }
-        55%  { opacity: 1;   transform: translate(-14px, -16px) scale(1);  } /* lift corner up */
-        75%  { opacity: 0.5; transform: translate(-4px, -4px)  scale(.97);} /* lower & release */
-        100% { opacity: 0;   transform: translate(2px, 2px)    scale(.9); }
+        filter: drop-shadow(0 3px 8px rgba(0,0,0,.45));
       }
 
       /* ── Pond reveal interaction (state-based) ──
@@ -7201,20 +7218,22 @@
         (function setupFlipTutorial(){
           var $viewport = $('.flipbook-viewport');
 
-          /* Peeling corner (reuses the .page-turn-hint corner-fold visual) */
-          var $cornerHint = $('<div class="page-turn-hint"></div>');
           /* Hand SVG (Material "swipe" icon, white fill + dark outline) */
-          var handSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="64" height="64">'
+          var handSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="60" height="60">'
             + '<path fill="rgba(0,0,0,.55)" d="M11 5.5C11 4.12 12.12 3 13.5 3S16 4.12 16 5.5V11c.55-.34 1.2-.5 1.88-.5 1.27 0 2.39.75 2.91 1.88.44-.19.91-.28 1.38-.28C23.27 12.1 24 13.38 24 14.81V17c0 3.31-2.69 6-6 6h-4.27C11.34 23 9 20.66 9 17.78V12c0-1.38 1.12-2.5 2.5-2.5.18 0 .35.02.5.05V5.5z"/>'
             + '<path fill="#ffffff" d="M11.5 5.5C11.5 4.4 12.4 3.5 13.5 3.5S15.5 4.4 15.5 5.5v6.5l1 .58c.44-.34.98-.58 1.57-.58 1.1 0 2 .75 2.27 1.76l.73-.26c.35-.12.72-.18 1.1-.18.96 0 1.83.63 1.83 1.49V17c0 3.03-2.47 5.5-5.5 5.5h-4.27C11.64 22.5 9.5 20.36 9.5 17.78V12c0-1.1.9-2 2-2 .35 0 .68.09.96.26L11.5 9.5V5.5z"/>'
             + '</svg>';
-          var $hand  = $('<div class="swipe-hand-demo"></div>').html(handSvg);
-          $viewport.append($cornerHint).append($hand);
+          /* Single wrapper: the peeling fold + the hand together. The wrapper
+             does the lift, so the hand stays glued to the corner as it rises. */
+          var $nudge = $('<div class="flip-nudge"></div>')
+            .append('<div class="corner-fold"></div>')
+            .append($('<div class="nudge-hand"></div>').html(handSvg));
+          $viewport.append($nudge);
 
           var startTimer = null, loopTimer = null;
           var loops = 0, MAX_LOOPS = 2;
           var TUTORIAL_DELAY = 15000;  /* 15 s of lingering before the reminder on later pages */
-          var CYCLE = 2400;            /* matches the cornerLift / handGrabLift animation */
+          var CYCLE = 2400;            /* matches the nudgeLift / foldGrow animation */
           var persist = false;         /* first page: keep nudging until the child flips */
 
           function turnPage(){
@@ -7225,8 +7244,7 @@
           function isFirstStoryPage(){ return turnPage() === FIRST_STORY_PAGE; }
 
           function hideVisuals(){
-            $cornerHint.removeClass('active');
-            $hand.removeClass('run');
+            $nudge.removeClass('run');
           }
 
           function runLoop(){
@@ -7236,11 +7254,10 @@
                on the first page it persists until the child flips. */
             if(!persist && loops >= MAX_LOOPS){ hideVisuals(); return; }
             loops++;
-            /* Restart both CSS animations from the top. */
-            $cornerHint.removeClass('active'); $hand.removeClass('run');
-            void $cornerHint[0].offsetWidth; void $hand[0].offsetWidth;
-            $cornerHint.addClass('active');
-            $hand.addClass('run');
+            /* Restart the gesture from the top (re-trigger both child anims). */
+            $nudge.removeClass('run');
+            void $nudge[0].offsetWidth;
+            $nudge.addClass('run');
             loopTimer = setTimeout(runLoop, CYCLE + 700); /* small pause between loops */
           }
 
