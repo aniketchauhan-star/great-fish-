@@ -1583,8 +1583,10 @@ const NUMBER_VO = {
 /* "{count} {colour} fishes" — used on pond-complete and on the summary rows.
    Recorded counts match the pond targets (pink 8, green 7, red 6, yellow 5). */
 const POND_COUNT_VO = {
-  pink:'8 pink fishes.ogg', green:'7 green fishes.ogg',
-  red:'6 red fishes.ogg',  yellow:'5 yellow fishes.ogg'
+  /* These four count VOs were re-encoded to .mp3 (the rest of the VO set is
+     still .ogg). Reference the files that actually exist on disk. */
+  pink:'8 pink fishes.mp3', green:'7 green fishes.mp3',
+  red:'6 red fishes.mp3',  yellow:'5 yellow fishes.mp3'
 };
 const VO = {
   choosePond:  'chose a pond.ogg',
