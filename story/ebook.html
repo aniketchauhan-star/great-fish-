@@ -5032,8 +5032,12 @@
          which only hides the fold — it can never commit a page turn, so the
          page never actually flips. pointer-events are untouched, so the Next
          arrow and real corner flip keep working during/after the hint. */
-      var firstPageTutorialShown = false;
-      var cornerHintTimers = [];
+      var firstPageTutorialShown = false;   // the hint loop has started on page 1
+      var firstPageHasFlipped    = false;   // reader has flipped off page 1 → stop forever
+      var firstPageHintTimer     = null;    // the "repeat after ~5s" timer
+      var cornerHintTimers       = [];      // timers for the peel/retract of one 3× burst
+      var CORNER_HINT_MS         = 3 * (620 + 260);  // duration of one 3× burst (~2.6s)
+
       function realPageCornerFlipEl(){
         try{
           var d = $('#flipbook').data();
@@ -5041,6 +5045,10 @@
           return (d && d.pages && d.pages[pg]) ? d.pages[pg] : null;
         }catch(e){ return null; }
       }
+      function isOnFirstStoryPage(){
+        try{ return $('#flipbook').turn('page') === FIRST_STORY_PAGE; }catch(e){ return false; }
+      }
+      /* Peel the REAL active page corner `times`× (default 3), then retract. */
       function playCornerFlipHint(times){
         times = times || 3;
         var CORNER = 'br';                 // bottom-right = the forward-flip corner
@@ -5048,7 +5056,7 @@
         cornerHintTimers = [];
         var i = 0;
         function peekOnce(){
-          if(i >= times) return;
+          if(i >= times || firstPageHasFlipped) return;
           i++;
           var el = realPageCornerFlipEl();
           if(!el) return;
@@ -5060,6 +5068,35 @@
           }, 620));                                             // hold the peek briefly
         }
         peekOnce();
+      }
+      /* Immediately stop any in-progress burst and snap the corner flat. */
+      function stopCornerFlipHint(){
+        cornerHintTimers.forEach(function(t){ clearTimeout(t); });
+        cornerHintTimers = [];
+        var el = realPageCornerFlipEl();
+        try{ if(el) el.flip('peel', false, false); }catch(e){}   // retract with no animation
+      }
+      /* Play the 3× hint, then — if the child still hasn't flipped off page 1 —
+         wait ~5s and play it again. Repeats until they flip. */
+      function startFirstPageFlipHintLoop(){
+        if(firstPageHasFlipped) return;
+        playCornerFlipHint(3);
+        clearTimeout(firstPageHintTimer);
+        firstPageHintTimer = setTimeout(function(){
+          if(!firstPageHasFlipped && isOnFirstStoryPage()){
+            console.log('[tutorial] page 1 not flipped yet → replaying corner hint');
+            startFirstPageFlipHintLoop();
+          }
+        }, CORNER_HINT_MS + 5000);          // ~5s idle AFTER the 3 peeks finish
+      }
+      /* Called the instant the reader flips off page 1 (arrow OR corner). */
+      function stopFirstPageFlipHintLoop(){
+        if(firstPageHasFlipped) return;
+        firstPageHasFlipped = true;
+        clearTimeout(firstPageHintTimer);
+        firstPageHintTimer = null;
+        stopCornerFlipHint();
+        console.log('[tutorial] page flipped → corner hint loop stopped');
       }
 
       function installPageFlipLock(){
@@ -7395,11 +7432,12 @@
             showNavForCurrentPage();
             scheduleFlipTutorial();
             /* First page only, once per session: after page-01's video ends and
-               the page unlocks, peek the REAL page corner 3× to teach the flip. */
+               the page unlocks, peek the REAL page corner 3× — and keep
+               repeating every ~5s until the child flips (see the loop). */
             if(!firstPageTutorialShown && currentPage() === FIRST_STORY_PAGE){
               firstPageTutorialShown = true;
               console.log('[tutorial] first-page real corner-peel hint (page 1)');
-              playCornerFlipHint(3);
+              startFirstPageFlipHintLoop();
             }
           }
 
@@ -7545,7 +7583,14 @@
              un-flippable, since scheduleNavReveal() never runs to re-arm it.
              (flipAllowed is true only for programmatic turns; a real manual peel
              is un-flagged but still gets its 'turned' → hideNavButtons below.) */
-          $fbNav.bind('turning', function(){ if(flipAllowed) hideNavButtons(); });
+          $fbNav.bind('turning', function(){
+            if(flipAllowed) hideNavButtons();
+            /* The reader is actually flipping the page (arrow OR real corner —
+               the tutorial's own peel does NOT fire 'turning'), so stop the
+               first-page hint loop immediately. Gated on the loop having started
+               so the cover→page-1 turn doesn't cancel it early. */
+            if(firstPageTutorialShown && !firstPageHasFlipped) stopFirstPageFlipHintLoop();
+          });
           $fbNav.bind('turned',  function(){ hideNavButtons(); scheduleNavReveal(); maybePrefetchGames(); });
 
           /* Expose for the keyboard handler and init bootstrap */
