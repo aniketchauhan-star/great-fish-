@@ -1172,7 +1172,7 @@
       preserveAspectRatio="none"
     ></svg>
 
-    <audio id="bgMusic" loop preload="auto"></audio>
+    <audio id="bgMusic" loop preload="none"></audio>
 
     <div class="book-scene">
       <div class="book-cover-wrap">
@@ -5048,6 +5048,8 @@
           fishGameLoaded = true;
           frame.src = FISH_GAME_URL;
         }
+        /* Warm page-07 (the page shown after this game) while the child plays. */
+        ensureVideoCached(GAME_TRIGGER_PAGE);
       }
 
       function hideFishGame(){
@@ -5113,6 +5115,8 @@
           fishGame2Loaded = true;
           frame.src = FISH_GAME2_URL;
         }
+        /* Warm page-09 (the page shown after this game) while the child plays. */
+        ensureVideoCached(GAME2_TRIGGER_PAGE);
       }
 
       function hideFishGame2(){
@@ -5138,6 +5142,47 @@
         hideFishGame2();
         flipBookTo(GAME2_TRIGGER_PAGE + 1);
       });
+
+      /* ── Safe game prefetch ──
+         Warm each game's HTML into the browser cache just before the reader
+         reaches it (page 5 → game 1, page 7 → game 2) with <link rel="prefetch">.
+         This is passive: it does NOT create an iframe and NEVER starts any
+         audio/video, so nothing can play in the background — it only makes the
+         game open faster when it's actually triggered. Runs at most once each. */
+      var _gamePrefetched = {};
+      function prefetchOnce(url){
+        if(!url || _gamePrefetched[url]) return;
+        _gamePrefetched[url] = true;
+        try{
+          var link = document.createElement('link');
+          link.rel = 'prefetch';
+          link.href = url;
+          document.head.appendChild(link);
+        }catch(e){}
+      }
+      function maybePrefetchGames(){
+        var pg;
+        try{ pg = $('#flipbook').turn('page'); }catch(e){ return; }
+        if(!fishGameCompleted  && pg >= GAME_TRIGGER_PAGE  - 1) prefetchOnce(FISH_GAME_URL);
+        if(!fishGame2Completed && pg >= GAME2_TRIGGER_PAGE - 1) prefetchOnce(FISH_GAME2_URL);
+      }
+
+      /* Make sure the story page the reader returns to AFTER a game is already
+         cached, so it plays instantly on continue. Reuses the same blob cache
+         the background loader fills — just prioritised while the game is open.
+         Turn.js page P maps to STORY.pages[P-1]; the page after a game trigger
+         (turn page TRIGGER+1) is therefore spread index TRIGGER. Video only. */
+      function ensureVideoCached(spreadIndex){
+        var page = STORY.pages[spreadIndex];
+        if(!page || !page.video) return;
+        if(preloadedVideos[page.video]){ assignPreloadedBlobs(); return; }
+        try{
+          fetchVideoBlob(page.video).then(function(blob){
+            preloadedVideos[page.video] = URL.createObjectURL(blob);
+            assignPreloadedBlobs();
+          }).catch(function(){});
+        }catch(e){}
+      }
 
       function registerPageAudio(audio){
         if(audio && trackedPageAudios.indexOf(audio) === -1){
