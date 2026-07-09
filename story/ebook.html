@@ -4935,6 +4935,10 @@
           return {
             image: isImage ? path : null,
             video: isVideo ? path : null,
+            /* First-frame poster (page-NN.webp) for each video, used as the
+               page background + <video poster> so a flip never shows a white
+               blank before the video paints. */
+            poster: isVideo ? encodeURI(mediaBase + file.replace(/\.mp4$/i, '.webp')) : null,
             dialogues: []
           };
         });
@@ -5757,6 +5761,9 @@
           if(page.video){
             var vid = document.createElement('video');
             prepareFlipbookVideo(vid);
+            /* Poster = the video's own first frame, so the element shows that
+               frame instantly (never white) until the video decodes/plays. */
+            if(page.poster) vid.poster = page.poster;
             vid.src = page.video;
             var $vid = $(vid).css({
               width: W + 'px',
@@ -5771,7 +5778,20 @@
               willChange: 'transform, opacity'
             });
             $vid.addClass('spread-video').attr('data-spread', i).attr('data-side', 'left');
-            $p.css({ position: 'relative', overflow: 'hidden' }).append($vid);
+            $p.css({ position: 'relative', overflow: 'hidden' });
+            /* Also paint the poster as the page background: this fills the brief
+               moment before the video paints AND gives the folding leaf real
+               artwork (the back-face reads the page's background-image), so a
+               page turn never flashes a white blank. */
+            if(page.poster){
+              $p.css({
+                backgroundImage:    'url("' + page.poster + '")',
+                backgroundSize:     W + 'px ' + H + 'px',
+                backgroundPosition: '0 0',
+                backgroundRepeat:   'no-repeat'
+              });
+            }
+            $p.append($vid);
           } else if(page.html){
             /* HTML page: supports either a URL (loaded via <iframe>) or an inline HTML string */
             $p.css({ position: 'relative', overflow: 'hidden', background: '#fff' });
