@@ -1344,9 +1344,11 @@
 
         flipOptions = {
 
-          // Size of the active zone of each corner
+          // Size of the active zone of each corner. 0 = manual corner
+          // peel/drag is disabled entirely; pages turn only via the arrow
+          // buttons / keyboard (programmatic turns don't use this).
 
-          cornerSize: 100
+          cornerSize: 0
 
         },
 
@@ -7104,10 +7106,12 @@
           acceleration: true,
           duration:  760,
           direction: 'ltr',
-          /* cornerSize 100 gives a generous grab area at the page corners so the
-             reader can peel/drag a page to turn it. Programmatic turns
-             (turn('next'/'previous'/'page')) are unaffected. */
-          cornerSize: 100,
+          /* cornerSize 0 disables manual corner peel/drag entirely: the corner
+             never lifts during a page's video/VO, and pages turn ONLY via the
+             Back/Next arrow buttons (and keyboard). Those arrows still appear
+             once the page's video/VO ends (see markFlipReady). Programmatic
+             turns — the arrows — do not use cornerSize, so they still work. */
+          cornerSize: 0,
             when: {
               turning: function(e, page, view){
                 /* Direction of this peel. During 'turning', turn('page') is still
@@ -7481,9 +7485,11 @@
           armVideoSound();
         });
 
-        /* NOTE: native corner peeling is enabled (cornerSize:100). The 'turning'
-           gate above only permits a manual peel once the page is flip-ready, and
-           blocks peeling back onto the cover. */
+        /* NOTE: native corner peeling is DISABLED (cornerSize:0) — pages turn
+           only via the Back/Next arrow buttons and keyboard. The 'turning' gate
+           above still guards those turns (flip-ready, cover, and the game
+           triggers). Manual peel can no longer start, so the corner never lifts
+           during a page's video/VO. */
 
       }
 
