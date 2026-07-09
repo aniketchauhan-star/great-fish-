@@ -102,6 +102,23 @@
       .loader-overlay.error .loader-bar-wrap{ display:none; }
       .loader-overlay.error .loader-retry{ display:inline-block; }
 
+      /* ── Fish Rescue mini-game (FULLSCREEN) ──
+         Opens OUTSIDE the flipbook frame, covering the whole viewport. The
+         game itself letterboxes to 16:9 on its own black backdrop, so we only
+         need a full-viewport black container holding a borderless iframe — no
+         book border, no extra loader. Shown after story page 6; hidden until
+         the game posts FISH_RESCUE_GAME_COMPLETE. */
+      .fish-game{
+        position:fixed; inset:0;
+        width:100vw; height:100vh; height:100dvh;
+        z-index:2147483000;               /* above every flipbook layer */
+        display:none; background:#000;
+      }
+      .fish-game.show{ display:block; }
+      .fish-game-frame{
+        width:100%; height:100%; border:0; display:block; background:#000;
+      }
+
       *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
       html,body{width:100%;height:100%;overflow:hidden;background:var(--theme-bg);font-family:'Nunito',sans-serif;}
 
@@ -1186,6 +1203,25 @@
         </div>
       </div>
       <div class="pg-cnt" id="pgCnt">The Great Fish Rescue</div>
+    </div>
+
+    <!-- Fish Rescue mini-game — opens FULLSCREEN over the whole viewport after
+         story page 6 (outside the flipbook frame, so no book border shows). The
+         game letterboxes itself to 16:9 on its own black backdrop, so no loader
+         or frame is added here — kids see the game's own start screen directly.
+         Lazy-loaded: the iframe src is set in JS the first time it's shown, and
+         it blocks the turn to page 7 until it posts FISH_RESCUE_GAME_COMPLETE. -->
+    <div id="fishGame" class="fish-game" aria-hidden="true">
+      <iframe id="fishGameFrame" class="fish-game-frame" title="Fish Rescue Game"
+              allow="autoplay; fullscreen"></iframe>
+    </div>
+
+    <!-- Second Fish Rescue mini-game (Fish Counting) — same fullscreen overlay,
+         opens after story page 8 and blocks page 9 until it posts
+         FISH_RESCUE_2_GAME_COMPLETE. Lazy-loaded (src set in JS on first show). -->
+    <div id="fishGame2" class="fish-game" aria-hidden="true">
+      <iframe id="fishGame2Frame" class="fish-game-frame" title="Fish Counting Game"
+              allow="autoplay; fullscreen"></iframe>
     </div>
 
     <script>
@@ -4971,6 +5007,138 @@
          init bootstrap can (re)evaluate button visibility for the cover. */
       var navGoNext = function(){}, navGoPrev = function(){}, navRefresh = function(){};
 
+      /* ── Fish Rescue mini-game integration ──
+         The game lives in "game/fish rescue game/fish rescue game/index.html"
+         and is embedded in an iframe filling the SAME 820×472 book area. It is
+         lazy-loaded (its src is set only the first time the reader finishes
+         story page 6) and it blocks the turn to page 7 until it posts
+         { type:'FISH_RESCUE_GAME_COMPLETE' } via postMessage. */
+      var fishGameCompleted = false;   // set once the game is finished
+      var fishGameLoaded    = false;   // iframe src assigned yet?
+      var fishGameActive    = false;   // is the game currently on screen?
+      /* Cover is turn.js page 1 and page-01 is FIRST_STORY_PAGE, so story
+         page 6 (page-06) is turn.js page FIRST_STORY_PAGE + 5. The game is
+         shown when the reader turns forward off that page. */
+      var GAME_TRIGGER_PAGE = FIRST_STORY_PAGE + 5;
+      /* Relative path, per-segment URL-encoded so the spaces in the folder
+         names survive on any static host (Netlify, etc.). */
+      var FISH_GAME_URL = '../game/fish rescue game/fish rescue game/index.html'
+                            .split('/').map(function(seg){ return encodeURIComponent(seg); }).join('/');
+
+      function showFishGame(){
+        var wrap  = document.getElementById('fishGame');
+        var frame = document.getElementById('fishGameFrame');
+        /* If the game markup is somehow missing, never strand the reader —
+           mark it done and continue to page 7. */
+        if(!wrap || !frame){
+          fishGameCompleted = true;
+          flipBookTo(GAME_TRIGGER_PAGE + 1);
+          return;
+        }
+        fishGameActive = true;
+        wrap.classList.add('show');
+        wrap.setAttribute('aria-hidden', 'false');
+        /* Pause the flipbook's own media so nothing plays behind the game. */
+        try{ stopTrackedPageAudio(); }catch(e){}
+        try{ if(bgEl) bgEl.pause(); }catch(e){}
+        try{ $('#flipbook video').each(function(){ try{ this.pause(); }catch(e){} }); }catch(e){}
+        /* Lazy-load the game the first time only. No extra loading screen —
+           the game shows its own start thumbnail ("The Fish Mix-Up / Let's Go"). */
+        if(!fishGameLoaded){
+          fishGameLoaded = true;
+          frame.src = FISH_GAME_URL;
+        }
+      }
+
+      function hideFishGame(){
+        var wrap  = document.getElementById('fishGame');
+        var frame = document.getElementById('fishGameFrame');
+        fishGameActive = false;
+        /* Unload the game DOCUMENT — not just a CSS hide — so every bit of the
+           game (background music, sound effects, <audio>/<video>, timers, any
+           Web Audio context) is destroyed immediately and nothing can keep
+           playing behind page 7. This only affects the iframe; the flipbook's
+           own audio/video live in this parent document and are untouched. */
+        if(frame){ try{ frame.src = 'about:blank'; }catch(e){} }
+        fishGameLoaded = false;
+        if(wrap){ wrap.classList.remove('show'); wrap.setAttribute('aria-hidden', 'true'); }
+      }
+
+      /* Listen for the game's completion message, then close it and continue
+         to story page 7 (page-07). The turning gate allows the turn once
+         fishGameCompleted is true. */
+      window.addEventListener('message', function(event){
+        if(!event.data || event.data.type !== 'FISH_RESCUE_GAME_COMPLETE') return;
+        var frame = document.getElementById('fishGameFrame');
+        /* Only trust messages coming from our own game iframe. */
+        if(frame && event.source && event.source !== frame.contentWindow) return;
+        if(fishGameCompleted) return;
+        fishGameCompleted = true;
+        hideFishGame();
+        flipBookTo(GAME_TRIGGER_PAGE + 1);
+      });
+
+      /* ── Second Fish Rescue mini-game (Fish Counting) ──
+         Same fullscreen pattern as the first game, but it lives in
+         "game/FishResue2 (1)/FishResue2/index.html", opens after story page 8,
+         blocks the turn to page 9 until it posts FISH_RESCUE_2_GAME_COMPLETE,
+         and is fully independent of the first game. */
+      var fishGame2Completed = false;
+      var fishGame2Loaded    = false;
+      var fishGame2Active     = false;
+      /* Story page 8 (page-08) is turn.js page FIRST_STORY_PAGE + 7. */
+      var GAME2_TRIGGER_PAGE = FIRST_STORY_PAGE + 7;
+      /* Exact folder name (spaces, capitals and "(1)") per-segment encoded. */
+      var FISH_GAME2_URL = '../game/FishResue2 (1)/FishResue2/index.html'
+                            .split('/').map(function(seg){ return encodeURIComponent(seg); }).join('/');
+
+      function showFishGame2(){
+        var wrap  = document.getElementById('fishGame2');
+        var frame = document.getElementById('fishGame2Frame');
+        if(!wrap || !frame){
+          fishGame2Completed = true;
+          flipBookTo(GAME2_TRIGGER_PAGE + 1);
+          return;
+        }
+        fishGame2Active = true;
+        wrap.classList.add('show');
+        wrap.setAttribute('aria-hidden', 'false');
+        /* Pause the flipbook's own media so nothing plays behind the game. */
+        try{ stopTrackedPageAudio(); }catch(e){}
+        try{ if(bgEl) bgEl.pause(); }catch(e){}
+        try{ $('#flipbook video').each(function(){ try{ this.pause(); }catch(e){} }); }catch(e){}
+        /* Lazy-load the game the first time only — the game shows its own start
+           screen directly (no extra loading overlay). */
+        if(!fishGame2Loaded){
+          fishGame2Loaded = true;
+          frame.src = FISH_GAME2_URL;
+        }
+      }
+
+      function hideFishGame2(){
+        var wrap  = document.getElementById('fishGame2');
+        var frame = document.getElementById('fishGame2Frame');
+        fishGame2Active = false;
+        /* Unload the game DOCUMENT so all its audio/video/timers stop instantly
+           — a CSS hide alone would let the game sound keep playing behind
+           page 9. Only this iframe is affected; the flipbook audio is not. */
+        if(frame){ try{ frame.src = 'about:blank'; }catch(e){} }
+        fishGame2Loaded = false;
+        if(wrap){ wrap.classList.remove('show'); wrap.setAttribute('aria-hidden', 'true'); }
+      }
+
+      /* When the second game reports completion, unload it and continue to
+         story page 9 (page-09). */
+      window.addEventListener('message', function(event){
+        if(!event.data || event.data.type !== 'FISH_RESCUE_2_GAME_COMPLETE') return;
+        var frame = document.getElementById('fishGame2Frame');
+        if(frame && event.source && event.source !== frame.contentWindow) return;
+        if(fishGame2Completed) return;
+        fishGame2Completed = true;
+        hideFishGame2();
+        flipBookTo(GAME2_TRIGGER_PAGE + 1);
+      });
+
       function registerPageAudio(audio){
         if(audio && trackedPageAudios.indexOf(audio) === -1){
           trackedPageAudios.push(audio);
@@ -6902,6 +7070,25 @@
                    we're heading forward. */
                 var curP = $('#flipbook').turn('page');
                 var goingForward = page > curP;
+                /* After story page 6, divert the forward turn into the Fish
+                   Rescue game instead of going to page 7 — until the game is
+                   completed. Applies to peel, Next button and arrow keys, and
+                   to the programmatic turn too (so it can't be bypassed). Once
+                   fishGameCompleted is true, this is skipped and page 7 opens.
+                   flipReady ensures page 6 has actually finished (its video
+                   ended) before the game appears — the Next button and arrows
+                   already require it; this covers a manual corner peel too. */
+                if(goingForward && curP === GAME_TRIGGER_PAGE && flipReady && !fishGameCompleted){
+                  e.preventDefault();
+                  showFishGame();
+                  return;
+                }
+                /* Same gate for the SECOND game after story page 8 → page 9. */
+                if(goingForward && curP === GAME2_TRIGGER_PAGE && flipReady && !fishGame2Completed){
+                  e.preventDefault();
+                  showFishGame2();
+                  return;
+                }
                 /* Manual corner peel (flipAllowed === false):
                      • Forward: only once the current page is flip-ready (its
                        video/narration has finished) so the child can't skip ahead.
@@ -7425,6 +7612,9 @@
       }
 
       $(document).keydown(function(e){
+        /* Ignore arrow-key navigation while either mini-game owns the screen so
+           the hidden book can't be flipped behind it. */
+        if(fishGameActive || fishGame2Active) return;
         startMusic();
         /* Route arrow keys through the SAME visibility-gated navigation as the
            buttons, so they only flip when a button is actually shown (not during
