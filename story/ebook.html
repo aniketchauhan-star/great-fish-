@@ -1198,7 +1198,7 @@
           <!-- Start button — shown only on the cover/thumbnail page; the reader
                must click it to begin (the cover no longer auto-advances). -->
           <button type="button" id="navStart" class="start-btn" aria-label="Start">
-            <img src="../assets/ui/buttons/start-button.png" alt="Start">
+            <img src="../assets/ui/buttons/start-button.webp" alt="Start">
           </button>
         </div>
       </div>
@@ -4907,7 +4907,7 @@
            Type is auto-detected below: .mp4 → video,
            .png/.jpg/.jpeg/.webp → image. */
         var mediaFiles = [
-          "thumbnail.png",
+          "thumbnail.webp",
           "page-01.mp4",
           "page-02.mp4",
           "page-03.mp4",
@@ -7374,7 +7374,7 @@
              (flipAllowed is true only for programmatic turns; a real manual peel
              is un-flagged but still gets its 'turned' → hideNavButtons below.) */
           $fbNav.bind('turning', function(){ if(flipAllowed) hideNavButtons(); });
-          $fbNav.bind('turned',  function(){ hideNavButtons(); scheduleNavReveal(); });
+          $fbNav.bind('turned',  function(){ hideNavButtons(); scheduleNavReveal(); maybePrefetchGames(); });
 
           /* Expose for the keyboard handler and init bootstrap */
           navGoNext = goNext;
