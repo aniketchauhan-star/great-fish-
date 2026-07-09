@@ -81,6 +81,27 @@
       .loader-bar-wrap { width:min(60vw, 240px); height:9px; background:rgba(255,255,255,.40); border-radius:6px; overflow:hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.25); }
       .loader-bar { height:100%; width:0%; background:#ffffff; border-radius:6px; transition:width .3s ease; box-shadow: 0 0 8px rgba(255,255,255,.7); }
 
+      /* Error message text (empty during normal loading — only set if the
+         first video fails to download). */
+      .loader-text{
+        color:#ffffff;
+        font-family:'Fredoka One','Nunito',sans-serif;
+        font-size:18px; letter-spacing:.4px;
+        margin-bottom:12px;
+        text-shadow:0 2px 6px rgba(0,0,0,.40);
+      }
+      .loader-text:empty{ display:none; }
+      /* Retry button — hidden unless the loader enters its error state. */
+      .loader-retry{
+        display:none; margin-top:4px; cursor:pointer;
+        font-family:'Fredoka One','Nunito',sans-serif; font-size:16px;
+        color:var(--theme-cover, #7B2630); background:#ffffff; border:0;
+        padding:10px 24px; border-radius:999px;
+        box-shadow:0 4px 12px rgba(0,0,0,.28);
+      }
+      .loader-overlay.error .loader-bar-wrap{ display:none; }
+      .loader-overlay.error .loader-retry{ display:inline-block; }
+
       *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
       html,body{width:100%;height:100%;overflow:hidden;background:var(--theme-bg);font-family:'Nunito',sans-serif;}
 
@@ -1115,12 +1136,14 @@
       <div class="loader-scene">
         <div class="loader-cover-wrap">
           <div class="loader-viewport">
-            <img class="loader-thumb" src="../assets/pages/thumbnail.png" alt="The Great Fish Rescue">
+            <img class="loader-thumb" src="../assets/pages/thumbnail.png" alt="The Great Fish Rescue" fetchpriority="high" decoding="async" width="820" height="472">
           </div>
         </div>
       </div>
       <div class="loader-overlay">
+        <div class="loader-text" id="loaderText" role="status" aria-live="polite"></div>
         <div class="loader-bar-wrap"><div class="loader-bar" id="loaderBar"></div></div>
+        <button type="button" class="loader-retry" id="loaderRetry">Retry</button>
       </div>
     </div>
 
@@ -5084,7 +5107,10 @@
         video.controls = false;
         video.autoplay = false;
         video.loop = false;
-        video.preload = 'auto';
+        /* 'none' so the browser does NOT eagerly download all page videos up
+           front. The first clip is fetched explicitly at boot; the rest stream
+           into the blob cache in the background (see bootstrapLoading). */
+        video.preload = 'none';
         video.playsInline = true;
         setVideoMutedState(video, true);
         video.removeAttribute('autoplay');
@@ -7229,89 +7255,152 @@
 
       }
 
-      /* ── Preload all videos, then show Start button ── */
-      function preloadAllVideos(callback){
-        var videoUrls = [];
-        STORY.pages.forEach(function(p){ if(p.video) videoUrls.push(p.video); });
-        var unique = videoUrls.filter(function(v,i,a){ return a.indexOf(v) === i; });
-        if(unique.length === 0){ showStartButton(callback); return; }
+      /* ── Fast loading strategy ──
+         Only the FIRST story video is downloaded before the Play (Start)
+         button appears — kids no longer wait for all ~65MB of clips. The
+         remaining videos stream into the blob cache in the background during
+         idle time, in reading order, so each page plays instantly by the time
+         it's reached. A page whose clip isn't cached yet simply streams from
+         its URL on demand. */
 
-        var loaded = 0;
-        var bar = document.getElementById('loaderBar');
-
-        unique.forEach(function(url){
-          fetch(url).then(function(r){ return r.blob(); }).then(function(blob){
-            var blobUrl = URL.createObjectURL(blob);
-            preloadedVideos[url] = blobUrl;
-            loaded++;
-            if(bar) bar.style.width = Math.round((loaded/unique.length)*100) + '%';
-            if(loaded === unique.length) onAllLoaded();
-          }).catch(function(){
-            loaded++;
-            if(bar) bar.style.width = Math.round((loaded/unique.length)*100) + '%';
-            if(loaded === unique.length) onAllLoaded();
+      /* Fetch a URL as a Blob, reporting download progress (0..1) when the
+         server sends Content-Length. Falls back to a plain blob() otherwise. */
+      function fetchVideoBlob(url, onProgress){
+        return fetch(url).then(function(resp){
+          if(!resp.ok) throw new Error('HTTP ' + resp.status);
+          var total = parseInt(resp.headers.get('Content-Length'), 10) || 0;
+          if(!total || !resp.body || typeof resp.body.getReader !== 'function'){
+            return resp.blob();   // no progress info available — just resolve
+          }
+          var reader = resp.body.getReader();
+          var chunks = [], received = 0;
+          return new Promise(function(resolve, reject){
+            (function pump(){
+              reader.read().then(function(step){
+                if(step.done){ resolve(new Blob(chunks)); return; }
+                chunks.push(step.value);
+                received += step.value.length;
+                if(onProgress) onProgress(Math.min(received / total, 1));
+                pump();
+              }).catch(reject);
+            })();
           });
         });
+      }
 
-        function onAllLoaded(){
-          /* Assign blob URLs to all video elements */
-          var allVids = $('.spread-video').get();
-          allVids.forEach(function(vid){
-            var si = parseInt(vid.getAttribute('data-spread'));
-            var page = STORY.pages[si];
-            if(page && page.video && preloadedVideos[page.video]){
-              vid.src = preloadedVideos[page.video];
-            }
-          });
-          $('#video-9-overlay[data-preload-src], .p81-reveal-video[data-preload-src]').each(function(){
-            var originalSrc = this.getAttribute('data-preload-src');
-            if(originalSrc && preloadedVideos[originalSrc]){
-              this.src = preloadedVideos[originalSrc];
-            }
-          });
+      /* Assign already-downloaded blob URLs to their video elements, but only
+         to clips that are untouched (paused, not yet played, not the active
+         page) so we never interrupt a video the child is watching. */
+      function assignPreloadedBlobs(){
+        $('.spread-video').each(function(){
+          var vid  = this;
+          var si   = parseInt(vid.getAttribute('data-spread'), 10);
+          var page = STORY.pages[si];
+          if(!page || !page.video) return;
+          var blobUrl = preloadedVideos[page.video];
+          if(!blobUrl || vid.src === blobUrl) return;
+          if(si === currentPlayingPage) return;
+          if(!vid.paused) return;
+          if(vid.currentTime && vid.currentTime > 0.05) return;
+          if(vid.dataset && vid.dataset.hasEnded === 'true') return;
+          try{ vid.src = blobUrl; }catch(e){}
+        });
+      }
 
-          /* Warm up all videos: play muted briefly to prime the decoder,
-             then pause & reset. This eliminates first-play flicker. */
-          var warmCount = 0;
-          var uniqueVids = [];
-          var seen = {};
-          allVids.forEach(function(v){
-            var key = v.getAttribute('data-spread') + '-' + v.getAttribute('data-side');
-            if(!seen[key]){ seen[key] = true; uniqueVids.push(v); }
-          });
-          if(uniqueVids.length === 0){ showStartButton(callback); return; }
-
-          function onWarm(){
-            warmCount++;
-            if(warmCount >= uniqueVids.length){
-              /* All warmed up — reset and show start */
-              allVids.forEach(function(v){
-                clearVideoEndedState(v);
-                try{ v.pause(); v.currentTime = 0; }catch(e){}
-              });
-              showStartButton(callback);
-            }
-          }
-
-          uniqueVids.forEach(function(v){
-            setVideoMutedState(v, true);
-            var played = false;
-            function done(){
-              if(played) return; played = true;
-              clearVideoEndedState(v);
-              try{ v.pause(); v.currentTime = 0; }catch(e){}
-              onWarm();
-            }
-            /* Play and wait for at least one frame to render, then stop */
-            v.addEventListener('playing', function warmHandler(){
-              v.removeEventListener('playing', warmHandler);
-              setTimeout(done, 150);
-            });
-            v.play().catch(function(){ done(); });
-            /* Fallback timeout in case 'playing' never fires */
-            setTimeout(done, 2000);
-          });
+      /* Prime one video's decoder (play muted for a frame, then reset) so its
+         first real play is flicker-free. */
+      function warmVideo(vid, done){
+        if(!vid){ done(); return; }
+        var finished = false;
+        function finish(){
+          if(finished) return; finished = true;
+          clearVideoEndedState(vid);
+          try{ vid.pause(); vid.currentTime = 0; }catch(e){}
+          done();
         }
+        setVideoMutedState(vid, true);
+        vid.addEventListener('playing', function warmHandler(){
+          vid.removeEventListener('playing', warmHandler);
+          setTimeout(finish, 150);
+        });
+        var p = vid.play();
+        if(p && typeof p.catch === 'function') p.catch(function(){ finish(); });
+        setTimeout(finish, 2000);   // safety net if 'playing' never fires
+      }
+
+      /* Run fn when the browser is idle, keeping background downloads off the
+         critical path while the child reads. */
+      function whenIdle(fn){
+        if(typeof window.requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 2500 });
+        else setTimeout(fn, 250);
+      }
+
+      /* Stream the remaining videos into the blob cache, one at a time and in
+         reading order, during idle time. Failures are non-fatal — that page
+         just streams from its URL when reached. */
+      function lazyLoadRest(urls){
+        var i = 0;
+        function step(){
+          if(i >= urls.length) return;
+          var url = urls[i++];
+          if(preloadedVideos[url]){ whenIdle(step); return; }
+          fetchVideoBlob(url).then(function(blob){
+            preloadedVideos[url] = URL.createObjectURL(blob);
+            assignPreloadedBlobs();
+          }).catch(function(){ /* ignore — streams on demand */ })
+            .then(function(){ whenIdle(step); });
+        }
+        whenIdle(step);
+      }
+
+      /* Put the loader into its error state: keep the thumbnail, hide the
+         spinner/bar, and show a Retry button. */
+      function showLoaderError(retryFn){
+        var overlay = document.querySelector('.loader-overlay');
+        var text    = document.getElementById('loaderText');
+        var retry   = document.getElementById('loaderRetry');
+        if(text)    text.textContent = 'Couldn’t load. Please retry.';
+        if(overlay) overlay.classList.add('error');
+        if(retry){
+          retry.onclick = function(){
+            if(overlay) overlay.classList.remove('error');
+            if(text)    text.textContent = '';
+            var bar = document.getElementById('loaderBar');
+            if(bar) bar.style.width = '0%';
+            retryFn();
+          };
+        }
+      }
+
+      /* Entry point: download just the first video, reveal the book (its Play
+         button appears on the identical thumbnail), then background-load the
+         rest. */
+      function bootstrapLoading(callback){
+        var urls = [];
+        STORY.pages.forEach(function(p){ if(p.video && urls.indexOf(p.video) === -1) urls.push(p.video); });
+        if(urls.length === 0){ showStartButton(callback); return; }
+
+        var firstUrl = urls[0];
+        var rest     = urls.slice(1);
+        var bar      = document.getElementById('loaderBar');
+
+        fetchVideoBlob(firstUrl, function(frac){
+          if(bar) bar.style.width = Math.round(frac * 100) + '%';
+        }).then(function(blob){
+          preloadedVideos[firstUrl] = URL.createObjectURL(blob);
+          if(bar) bar.style.width = '100%';
+          assignPreloadedBlobs();
+          var firstVid = $('.spread-video').filter(function(){
+            var page = STORY.pages[parseInt(this.getAttribute('data-spread'), 10)];
+            return page && page.video === firstUrl;
+          }).get(0);
+          warmVideo(firstVid, function(){
+            showStartButton(callback);   // hides preloader → book + Play button appear
+            lazyLoadRest(rest);          // the rest stream in the background
+          });
+        }).catch(function(){
+          showLoaderError(function(){ bootstrapLoading(callback); });
+        });
       }
 
       var _appCallback = null;
@@ -7352,7 +7441,7 @@
 
       initMusic();
       $(document).ready(function(){
-        preloadAllVideos(loadApp);
+        bootstrapLoading(loadApp);
       });
     </script>
   </body>
