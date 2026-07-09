@@ -119,6 +119,29 @@
         width:100%; height:100%; border:0; display:block; background:#000;
       }
 
+      /* ── First-page corner-flip tutorial hint ──
+         Shown once, on page 1 only, after its video ends. Purely visual: a soft
+         paper corner that gently peels 3× in the top-right corner to teach the
+         child they can flip. pointer-events:none so it NEVER blocks the Next
+         arrow or a real corner flip; it removes itself after the 3rd peel. */
+      .corner-flip-tutorial{
+        position:absolute; right:0; top:0;
+        width:92px; height:92px;
+        z-index:9000;                 /* above the page video (60), below spine/arrows */
+        pointer-events:none;
+        background:linear-gradient(135deg, rgba(255,255,255,0.78), rgba(255,255,255,0.12));
+        clip-path:polygon(100% 0, 0 0, 100% 100%);
+        transform-origin:100% 0;
+        box-shadow:-2px 3px 7px rgba(0,0,0,.20);
+        animation:gentleCornerFlip .8s ease-in-out 3 forwards;
+      }
+      @keyframes gentleCornerFlip{
+        0%   { transform:perspective(600px) rotateY(0deg)   translate(0,0);      opacity:.15; }
+        35%  { transform:perspective(600px) rotateY(-38deg) translate(-8px,8px); opacity:.9;  }
+        70%  { transform:perspective(600px) rotateY(0deg)   translate(0,0);      opacity:.5;  }
+        100% { transform:perspective(600px) rotateY(0deg)   translate(0,0);      opacity:0;   }
+      }
+
       *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
       html,body{width:100%;height:100%;overflow:hidden;background:var(--theme-bg);font-family:'Nunito',sans-serif;}
 
@@ -1344,11 +1367,12 @@
 
         flipOptions = {
 
-          // Size of the active zone of each corner. 0 = manual corner
-          // peel/drag is disabled entirely; pages turn only via the arrow
-          // buttons / keyboard (programmatic turns don't use this).
+          // Size of the active zone of each corner. Corner peel is ENABLED;
+          // whether a peel may actually start is gated dynamically by the page
+          // lock (see installPageFlipLock / the 'turning' gate) — blocked while
+          // the page is locked, fully active once the Next arrow appears.
 
-          cornerSize: 0
+          cornerSize: 100
 
         },
 
@@ -5009,6 +5033,44 @@
       function flipBookNext(){ guardedFlip(function(){ try{ $('#flipbook').turn('next'); }catch(e){} }); }
       function flipBookPrev(){ guardedFlip(function(){ try{ $('#flipbook').turn('previous'); }catch(e){} }); }
       function flipBookTo(page){ guardedFlip(function(){ try{ $('#flipbook').turn('page', page); }catch(e){} }); }
+
+      /* ── Dynamic page-flip lock (library-independent) ──
+         While a page is LOCKED (flipReady === false, i.e. its video/VO is still
+         playing), swallow every flip-initiating gesture (press / drag / swipe /
+         move / wheel / click) on the book pages in the CAPTURE phase, so turn.js
+         never receives it and the corner never lifts. The MOMENT the page
+         unlocks (flipReady === true, set by markFlipReady when the Next arrow
+         appears) this becomes a NO-OP — turn.js gets the events natively, so the
+         corner peel and right-side drag/swipe work exactly like the arrow.
+         Nothing is permanently disabled and no overlay is used: the same one
+         listener simply stops interfering once unlocked. Fires before turn.js'
+         own #flipbook handlers; audio-unlock is bound on `document` (capture) and
+         runs first, so video sound is unaffected; games are in a separate fixed
+         overlay, so they're untouched. */
+      function installPageFlipLock(){
+        var vp = document.querySelector('.flipbook-viewport');
+        if(!vp || vp.dataset.flipLockBound === 'true') return;
+        vp.dataset.flipLockBound = 'true';
+        function isAllowed(t){
+          return !!(t && t.closest && t.closest(
+            '#navNext, #navBack, #navStart, .nav-btn, .start-btn, [data-clickable], .hotspot, .clickable'));
+        }
+        function block(e){
+          if(flipReady) return;             // UNLOCKED → do nothing; corner/swipe flip works natively
+          if(isAllowed(e.target)) return;   // arrows / hotspots always pass through
+          e.preventDefault();
+          e.stopPropagation();
+          if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+          if(e.type === 'pointerdown' || e.type === 'mousedown' ||
+             e.type === 'touchstart'  || e.type === 'wheel'){
+            console.log('[flip] blocked early page gesture (page locked):', e.type);
+          }
+        }
+        ['pointerdown','pointerup','pointermove','mousedown','mouseup','mousemove',
+         'touchstart','touchmove','touchend','wheel','click','dblclick'].forEach(function(ev){
+          vp.addEventListener(ev, block, true);
+        });
+      }
       /* Assigned inside setupNavButtons so the keyboard handler can reuse the
          exact same visibility-gated navigation as the buttons, and so the
          init bootstrap can (re)evaluate button visibility for the cover. */
@@ -7109,6 +7171,7 @@
         flipbookInitialized = true;
         setupAllVideoEndHandlers(document.getElementById('flipbook'));
         bindFlipbookDelegatedInteractions();
+        installPageFlipLock();   /* hard-lock: page gestures never flip; arrows only */
 
         function armVideoSound(){
           if(videoSoundEnabled) return;
@@ -7127,12 +7190,13 @@
           acceleration: true,
           duration:  760,
           direction: 'ltr',
-          /* cornerSize 0 disables manual corner peel/drag entirely: the corner
-             never lifts during a page's video/VO, and pages turn ONLY via the
-             Back/Next arrow buttons (and keyboard). Those arrows still appear
-             once the page's video/VO ends (see markFlipReady). Programmatic
-             turns — the arrows — do not use cornerSize, so they still work. */
-          cornerSize: 0,
+          /* Corner peel is ENABLED. It is gated dynamically by the page lock,
+             NOT permanently: while a page is locked (its video/VO still
+             playing) installPageFlipLock swallows the gesture so the corner
+             never lifts; once flipReady is set (video/VO ends → Next arrow
+             appears) the lock releases and corner/right-side peel works just
+             like the arrow buttons. */
+          cornerSize: 100,
             when: {
               turning: function(e, page, view){
                 /* Direction of this peel. During 'turning', turn('page') is still
@@ -7159,13 +7223,16 @@
                   showFishGame2();
                   return;
                 }
-                /* Manual corner peel (flipAllowed === false):
-                     • Forward: only once the current page is flip-ready (its
-                       video/narration has finished) so the child can't skip ahead.
-                     • Backward: always allowed, so the child can flip back to an
-                       earlier page at any time (even mid-video) — but never peel
-                       back onto the cover.
-                   Programmatic turns set flipAllowed=true via guardedFlip(). */
+                /* Manual corner/right-side peel (flipAllowed === false):
+                     • Forward: allowed ONLY once the page is unlocked (flipReady
+                       — its video/VO finished and the Next arrow appeared), so
+                       the child can't skip ahead early.
+                     • Backward: allowed once unlocked too, but never back onto
+                       the cover.
+                   While locked, installPageFlipLock already swallows the gesture
+                   so the corner won't even lift; this is the belt-and-braces
+                   gate at the turn.js layer. Programmatic turns (arrow buttons /
+                   game transitions) set flipAllowed=true via guardedFlip. */
                 if(!flipAllowed){
                   if(goingForward && !flipReady){ e.preventDefault(); return; }
                   if(page < FIRST_STORY_PAGE){ e.preventDefault(); return; }
@@ -7286,12 +7353,19 @@
             }
           }
 
-          /* Lock the page (no manual flip), stop any tutorial, and clear any
-             pending reveal/pulse. Called on every real turn and while turning. */
+          /* ── Page-flip lock ──
+             flipReady (module-scoped) is the single lock flag, shared with the
+             gesture blocker (installPageFlipLock) and the turn.js 'turning'
+             gate. false = LOCKED (video/VO playing, arrows hidden, corner peel
+             blocked); true = UNLOCKED (content done, arrows shown, corner peel +
+             right-side drag/swipe active). */
+
+          /* lockPageFlip: hide the arrows AND lock flipping (corner + arrow).
+             Called on every real turn and while turning. */
           function hideNavButtons(){
             clearTimeout(navRevealTimer);
             cancelNavAttract();
-            flipReady = false;
+            flipReady = false;                   // LOCK: corner peel blocked + arrows hidden
             cancelFlipTutorial();
             navBackBtn.classList.remove('nav-visible');
             navNextBtn.classList.remove('nav-visible');
@@ -7320,6 +7394,7 @@
             var showNext = page >= FIRST_STORY_PAGE && page < TOTAL;
             navBackBtn.classList.toggle('nav-visible', showBack);
             navNextBtn.classList.toggle('nav-visible', showNext);
+            if(showNext) console.log('[flip] UNLOCKED page', page, '— Next arrow + corner peel both active');
             /* Soft pulse + glow shortly after they appear */
             cancelNavAttract();
             navAttractTimer = setTimeout(function(){
@@ -7387,17 +7462,22 @@
             navRevealTimer = setTimeout(markFlipReady, 3000);
           }
 
-          /* Keyboard navigation — mirrors the corner peel: forward waits for the
-             page to be flip-ready (no skipping ahead while a video plays), while
-             Back is always allowed except onto the cover (so the child can
-             revisit an earlier page any time). */
+          /* A page may be flipped ONLY once its arrow button is actually
+             showing — flipping is tied directly to the visible button (both
+             for clicks and the keyboard). The Next button appears when the
+             page's video/VO finishes (markFlipReady); the Back button appears
+             at the same time. No button on screen → no flip. */
           function goNext(){
-            if(!flipReady) return;
+            if(!navNextBtn.classList.contains('nav-visible')){   // Next arrow hidden → locked
+              console.log('[flip] blocked: page locked, Next arrow not visible (page', currentPage() + ')');
+              return;
+            }
+            console.log('[flip] Next arrow clicked → flipping from page', currentPage());
             cancelFlipTutorial();
             flipBookNext();
           }
           function goPrev(){
-            if(currentPage() <= FIRST_STORY_PAGE) return;
+            if(!navBackBtn.classList.contains('nav-visible')) return;
             cancelFlipTutorial();
             flipBookPrev();
           }
