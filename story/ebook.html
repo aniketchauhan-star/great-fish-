@@ -5047,6 +5047,30 @@
          own #flipbook handlers; audio-unlock is bound on `document` (capture) and
          runs first, so video sound is unaffected; games are in a separate fixed
          overlay, so they're untouched. */
+      /* ── First-page corner-flip tutorial ──
+         Session-scoped so it plays at most once (not again if the child returns
+         to page 1). Creates a purely-visual, pointer-events:none corner hint
+         that peels 3× then removes itself — it never turns the page and never
+         blocks the Next arrow or a real corner flip. */
+      var firstPageTutorialShown = false;
+      function playCornerFlipTutorial(){
+        var vp = document.querySelector('.flipbook-viewport');
+        if(!vp) return;
+        var old = vp.querySelector('.corner-flip-tutorial');
+        if(old){ try{ old.remove(); }catch(e){} }
+        var hint = document.createElement('div');
+        hint.className = 'corner-flip-tutorial';
+        hint.setAttribute('aria-hidden', 'true');
+        vp.appendChild(hint);
+        var done = false;
+        function cleanup(){ if(done) return; done = true; try{ hint.remove(); }catch(e){} }
+        /* animationend fires once after all 3 iterations complete. */
+        hint.addEventListener('animationend', cleanup);
+        /* Safety net: remove after 3 × 0.8s + buffer even if animationend is
+           missed (e.g. reduced-motion / tab was backgrounded). */
+        setTimeout(cleanup, 3000);
+      }
+
       function installPageFlipLock(){
         var vp = document.querySelector('.flipbook-viewport');
         if(!vp || vp.dataset.flipLockBound === 'true') return;
@@ -7379,6 +7403,13 @@
             flipReady = true;
             showNavForCurrentPage();
             scheduleFlipTutorial();
+            /* First page only, once per session: after page-01's video ends and
+               the page unlocks, gently peel the corner 3× to teach the flip. */
+            if(!firstPageTutorialShown && currentPage() === FIRST_STORY_PAGE){
+              firstPageTutorialShown = true;
+              console.log('[tutorial] first-page corner-flip hint (page 1)');
+              playCornerFlipTutorial();
+            }
           }
 
           /* Show / hide the cover Start button. */
