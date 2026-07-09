@@ -119,29 +119,6 @@
         width:100%; height:100%; border:0; display:block; background:#000;
       }
 
-      /* ── First-page corner-flip tutorial hint ──
-         Shown once, on page 1 only, after its video ends. Purely visual: a soft
-         paper corner that gently peels 3× in the top-right corner to teach the
-         child they can flip. pointer-events:none so it NEVER blocks the Next
-         arrow or a real corner flip; it removes itself after the 3rd peel. */
-      .corner-flip-tutorial{
-        position:absolute; right:0; top:0;
-        width:92px; height:92px;
-        z-index:9000;                 /* above the page video (60), below spine/arrows */
-        pointer-events:none;
-        background:linear-gradient(135deg, rgba(255,255,255,0.78), rgba(255,255,255,0.12));
-        clip-path:polygon(100% 0, 0 0, 100% 100%);
-        transform-origin:100% 0;
-        box-shadow:-2px 3px 7px rgba(0,0,0,.20);
-        animation:gentleCornerFlip .8s ease-in-out 3 forwards;
-      }
-      @keyframes gentleCornerFlip{
-        0%   { transform:perspective(600px) rotateY(0deg)   translate(0,0);      opacity:.15; }
-        35%  { transform:perspective(600px) rotateY(-38deg) translate(-8px,8px); opacity:.9;  }
-        70%  { transform:perspective(600px) rotateY(0deg)   translate(0,0);      opacity:.5;  }
-        100% { transform:perspective(600px) rotateY(0deg)   translate(0,0);      opacity:0;   }
-      }
-
       *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
       html,body{width:100%;height:100%;overflow:hidden;background:var(--theme-bg);font-family:'Nunito',sans-serif;}
 
@@ -5047,28 +5024,42 @@
          own #flipbook handlers; audio-unlock is bound on `document` (capture) and
          runs first, so video sound is unaffected; games are in a separate fixed
          overlay, so they're untouched. */
-      /* ── First-page corner-flip tutorial ──
-         Session-scoped so it plays at most once (not again if the child returns
-         to page 1). Creates a purely-visual, pointer-events:none corner hint
-         that peels 3× then removes itself — it never turns the page and never
-         blocks the Next arrow or a real corner flip. */
+      /* ── First-page corner-flip hint (page 1 only, once per session) ──
+         Uses turn.js's OWN page-corner peel — no fake element, no overlay, no
+         custom CSS. We peel the REAL active page's bottom-right corner (the
+         actual forward-flip corner, turnCorners 'bl,br') a little, then retract
+         it, 3 times. Retracting via flip('peel', false) calls hideFoldedPage,
+         which only hides the fold — it can never commit a page turn, so the
+         page never actually flips. pointer-events are untouched, so the Next
+         arrow and real corner flip keep working during/after the hint. */
       var firstPageTutorialShown = false;
-      function playCornerFlipTutorial(){
-        var vp = document.querySelector('.flipbook-viewport');
-        if(!vp) return;
-        var old = vp.querySelector('.corner-flip-tutorial');
-        if(old){ try{ old.remove(); }catch(e){} }
-        var hint = document.createElement('div');
-        hint.className = 'corner-flip-tutorial';
-        hint.setAttribute('aria-hidden', 'true');
-        vp.appendChild(hint);
-        var done = false;
-        function cleanup(){ if(done) return; done = true; try{ hint.remove(); }catch(e){} }
-        /* animationend fires once after all 3 iterations complete. */
-        hint.addEventListener('animationend', cleanup);
-        /* Safety net: remove after 3 × 0.8s + buffer even if animationend is
-           missed (e.g. reduced-motion / tab was backgrounded). */
-        setTimeout(cleanup, 3000);
+      var cornerHintTimers = [];
+      function realPageCornerFlipEl(){
+        try{
+          var d = $('#flipbook').data();
+          var pg = $('#flipbook').turn('page');
+          return (d && d.pages && d.pages[pg]) ? d.pages[pg] : null;
+        }catch(e){ return null; }
+      }
+      function playCornerFlipHint(times){
+        times = times || 3;
+        var CORNER = 'br';                 // bottom-right = the forward-flip corner
+        cornerHintTimers.forEach(function(t){ clearTimeout(t); });
+        cornerHintTimers = [];
+        var i = 0;
+        function peekOnce(){
+          if(i >= times) return;
+          i++;
+          var el = realPageCornerFlipEl();
+          if(!el) return;
+          try{ el.flip('peel', CORNER, true); }catch(e){}      // lift the real corner
+          cornerHintTimers.push(setTimeout(function(){
+            var el2 = realPageCornerFlipEl();
+            try{ if(el2) el2.flip('peel', false, true); }catch(e){}  // retract (never turns the page)
+            cornerHintTimers.push(setTimeout(peekOnce, 260));   // small gap, then next peek
+          }, 620));                                             // hold the peek briefly
+        }
+        peekOnce();
       }
 
       function installPageFlipLock(){
@@ -7404,11 +7395,11 @@
             showNavForCurrentPage();
             scheduleFlipTutorial();
             /* First page only, once per session: after page-01's video ends and
-               the page unlocks, gently peel the corner 3× to teach the flip. */
+               the page unlocks, peek the REAL page corner 3× to teach the flip. */
             if(!firstPageTutorialShown && currentPage() === FIRST_STORY_PAGE){
               firstPageTutorialShown = true;
-              console.log('[tutorial] first-page corner-flip hint (page 1)');
-              playCornerFlipTutorial();
+              console.log('[tutorial] first-page real corner-peel hint (page 1)');
+              playCornerFlipHint(3);
             }
           }
 
